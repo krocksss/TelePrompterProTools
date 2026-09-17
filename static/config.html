@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prompter · configuração</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/prompter.png">
+<style>
+  :root { --bg:#101012; --card:#18181c; --fg:#ececf0; --dim:#8b8b95; --line:#26262c; --ok:#5ee3a0; --warn:#f2c94c; --bad:#ff5c5c; --acc:#7cc0ff; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:"Segoe UI",system-ui,sans-serif; font-size:15px; }
+  header { display:flex; gap:16px; align-items:center; padding:14px 22px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:2; }
+  header h1 { font-size:17px; margin:0; font-weight:600; flex:1; }
+  a { color:var(--acc); text-decoration:none; }
+  button { background:#24242a; color:var(--fg); border:1px solid #33333a; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  button:hover { background:#2d2d34; } button.primary { background:#2a4a6a; border-color:#3a6a9a; } button:disabled { opacity:.5; cursor:default; }
+  main { max-width:900px; margin:0 auto; padding:18px 22px 60px; display:flex; flex-direction:column; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; }
+  .card h2 { margin:0 0 6px; font-size:16px; display:flex; align-items:center; gap:10px; }
+  .card h2 .n { width:26px; height:26px; border-radius:50%; background:#24242a; display:inline-flex; align-items:center; justify-content:center; font-size:13px; color:var(--dim); }
+  .card h2 .st { margin-left:auto; font-size:12px; padding:3px 9px; border-radius:99px; background:#24242a; color:var(--dim); }
+  .st.ok { color:var(--ok); } .st.warn { color:var(--warn); } .st.bad { color:var(--bad); }
+  .hint { color:var(--dim); font-size:13.5px; line-height:1.5; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+  input[type=text], select { background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:8px; padding:8px 10px; font-size:14px; }
+  ul.steps { margin:8px 0 0; padding-left:20px; line-height:1.6; } ul.steps li b { color:var(--fg); }
+  .check { display:inline-flex; align-items:center; gap:6px; margin-right:14px; font-size:14px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); }
+  .msg { font-size:13px; color:var(--warn); margin-top:6px; }
+  kbd { background:#24242a; border:1px solid #3a3a42; border-radius:5px; padding:1px 6px; font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Prompter · configuração e primeiros passos</h1>
+  <a href="/estudio">estúdio de letras</a>
+  <a href="/" target="_blank">abrir prompter ↗</a>
+</header>
+<main>
+  <div class="card">
+    <h2><span class="n">1</span> Pro Tools <span class="st" id="stPT">…</span></h2>
+    <div class="hint" id="ptHint">O Prompter abre o Pro Tools junto quando inicia. Abra a sessão da música. O Prompter se conecta sozinho pela biblioteca de scripts do Pro Tools (PTSL): sem driver, sem configuração. Funciona no Pro Tools Intro, Artist, Studio e Ultimate a partir da versão 2022.12.</div>
+    <div class="row">
+      <span class="check"><i class="dot" id="dRun"></i> Pro Tools aberto</span>
+      <span class="check"><i class="dot" id="dPtsl"></i> conectado (PTSL)</span>
+      <span class="check"><i class="dot" id="dSess"></i> <span id="tSess">sessão</span></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">2</span> Músicas e letras <span class="st ok" id="stSongs">…</span></h2>
+    <div class="hint">Cada sessão do Pro Tools é uma música. Ao abrir a sessão, o Prompter lê os áudios dela e transcreve a letra em segundo plano (com tempo palavra por palavra). Se quiser a letra exata, cole a oficial no estúdio: ela é alinhada com o áudio.</div>
+    <div class="row">
+      <label class="check"><input type="checkbox" id="cSessAuto"> sessão aberta entra sozinha na biblioteca</label>
+    </div>
+    <div class="row">
+      <span class="hint">Pasta extra de músicas (MP3 solto ou pasta por música):</span>
+      <input type="text" id="cPasta" style="flex:1;min-width:260px">
+      <button onclick="post({action:'open_folder'})">abrir pasta</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">3</span> Transcrição <span class="st" id="stModel">…</span></h2>
+    <div class="hint">A primeira transcrição baixa o modelo (uma vez, ~1,6 GB). Depois roda sem internet, na CPU, em prioridade baixa e só quando o Pro Tools está parado. <b>large-v3-turbo</b> acertou 97% das palavras nos testes; <b>medium</b> 72%; <b>small</b> serve para conferir rápido.</div>
+    <div class="row">
+      <select id="cModelo">
+        <option value="large-v3-turbo">large-v3-turbo (melhor, 1,6 GB)</option>
+        <option value="medium">medium (1,5 GB)</option>
+        <option value="small">small (rápido, 480 MB)</option>
+        <option value="base">base (muito rápido, 150 MB)</option>
+      </select>
+      <select id="cIdioma">
+        <option value="pt">português</option><option value="en">inglês</option><option value="es">espanhol</option><option value="">detectar</option>
+      </select>
+      <label class="check"><input type="checkbox" id="cSep"> isolar a voz antes (Demucs, mais preciso)</label>
+      <button onclick="post({action:'download_models'})">baixar modelos agora</button>
+      <span class="check"><i class="dot" id="dWh"></i> modelo</span>
+      <span class="check"><i class="dot" id="dDm"></i> separador de voz</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">4</span> Precisão máxima (opcional): MTC <span class="st" id="stMtc">…</span></h2>
+    <div class="hint" id="mtcHint">Sem isto o Prompter já acompanha o Pro Tools com erro de ~0,1 s. Com o MTC (timecode MIDI) a posição vem frame a frame. Precisa do <b>loopMIDI</b> (gratuito, de Tobias Erichsen) e de ligar o gerador de MTC no Pro Tools, uma vez.</div>
+    <div class="row">
+      <span class="check"><i class="dot" id="dLoop"></i> loopMIDI instalado</span>
+      <span class="check"><i class="dot" id="dPort"></i> porta "Pro Tools MTC"</span>
+      <span class="check"><i class="dot" id="dMtc"></i> MTC chegando</span>
+    </div>
+    <div class="row">
+      <button class="primary" id="bLoop" onclick="post({action:'install_loopmidi'})">instalar loopMIDI e criar a porta</button>
+      <button id="bPort" onclick="post({action:'create_port'})">só criar a porta</button>
+    </div>
+    <div class="msg" id="loopMsg"></div>
+    <ul class="steps hint">
+      <li>No Pro Tools: <b>Setup › Peripherals › Synchronization</b> → MTC Generator Port = <b>Pro Tools MTC</b> → OK.</li>
+      <li><b>Window › Transport</b>; no menu <b>View › Transport › Synchronization</b>; deixe o botão <b>Gen MTC</b> aceso.</li>
+      <li>Dê play: o ponto "MTC chegando" fica verde.</li>
+    </ul>
+  </div>
+
+  <div class="card" id="cardUpd">
+    <h2><span class="n">★</span> Sobre e atualização <span class="st" id="stUpd">…</span></h2>
+    <div class="row" style="margin-top:4px">
+      <img src="/static/autor.png" style="width:52px;height:52px;border-radius:50%" alt="">
+      <div><b>Prompter <span id="tVer2"></span></b> · feito por <b>Marllon Machado</b><br><a href="https://github.com/krocksss" target="_blank">github.com/krocksss</a> · <a href="https://github.com/krocksss/TelePrompterProTools" target="_blank">código e downloads</a></div>
+      <span style="flex:1"></span>
+      <button onclick="post({action:'check_update'})">procurar atualização</button>
+      <button class="primary" id="bUpd" style="display:none" onclick="post({action:'install_update'})">baixar e instalar</button>
+      <label class="check"><input type="checkbox" id="cUpd"> olhar no GitHub se há versão nova</label>
+    </div>
+    <div class="msg" id="updMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="n">5</span> No show</h2>
+    <div class="hint">O Prompter fica na bandeja (ícone ao lado do relógio). Tela do prompter: <a href="/" target="_blank">localhost:<span id="tPorta"></span></a>. Teclas na tela: <kbd>F</kbd> tela cheia · <kbd>espaço</kbd> play/stop no Pro Tools · <kbd>←</kbd> <kbd>→</kbd> linha na mão · <kbd>A</kbd> volta ao automático.</div>
+    <div class="row">
+      <button onclick="post({action:'monitor2'})">abrir no monitor 2 em tela cheia</button>
+      <label class="check"><input type="checkbox" id="cAuto"> iniciar com o sistema</label>
+      <label class="check"><input type="checkbox" id="cPT"> abrir o Pro Tools junto</label>
+      <label class="check"><input type="checkbox" id="cNav"> abrir o teleprompter no navegador ao iniciar</label>
+      <button onclick="post({action:'open_protools'})">abrir o Pro Tools agora</button>
+      <span class="hint" id="tVer"></span>
+      <button onclick="post({action:'open_log'})" style="margin-left:auto">ver log</button>
+    </div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let st = null, dirty = false;
+function dot(id, ok, warn) { $(id).className = 'dot ' + (ok ? 'ok' : warn ? 'warn' : ''); }
+async function load() {
+  const r = await fetch('/api/setup'); st = await r.json(); render();
+}
+async function post(body) { const r = await fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); st = await r.json(); render(); }
+function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
+function render() {
+  dot('dRun', st.pt_running); dot('dPtsl', st.ptsl); dot('dSess', !!st.session, st.ptsl);
+  $('tSess').textContent = st.session ? 'sessão: ' + st.session : 'nenhuma sessão aberta';
+  const sp = $('stPT');
+  if (st.ptsl && st.session) { sp.textContent = 'pronto'; sp.className = 'st ok'; }
+  else if (st.ptsl) { sp.textContent = 'conectado, abra uma sessão'; sp.className = 'st warn'; }
+  else if (st.pt_running) { sp.textContent = 'Pro Tools aberto, sem PTSL'; sp.className = 'st warn'; $('ptHint').textContent = 'O Pro Tools está aberto mas não respondeu pela PTSL (versão anterior a 2022.12?). O Prompter usa o título da janela para achar a sessão; a posição só vem pelo MTC (passo 4).'; }
+  else { sp.textContent = 'abra o Pro Tools'; sp.className = 'st bad'; }
+  $('stSongs').textContent = st.n_songs + (st.n_songs === 1 ? ' música' : ' músicas');
+  if (!dirty) { $('cPasta').value = st.pasta_musicas; $('cModelo').value = st.whisper_model; }
+  dot('dWh', st.whisper_cached); dot('dDm', st.demucs_cached);
+  const sm = $('stModel'); sm.textContent = st.transcribing ? 'transcrevendo…' : (st.whisper_cached ? 'modelo pronto' : 'modelo baixa na 1ª transcrição'); sm.className = 'st ' + (st.whisper_cached ? 'ok' : 'warn');
+  dot('dLoop', st.loopmidi_installed); dot('dPort', st.midi_port_ok, st.midi_ports.length > 0); dot('dMtc', st.mtc_live, st.mtc_seen);
+  const sx = $('stMtc');
+  if (st.mtc_live) { sx.textContent = 'MTC ao vivo'; sx.className = 'st ok'; }
+  else if (st.mtc_seen) { sx.textContent = 'MTC já chegou (parado)'; sx.className = 'st ok'; }
+  else if (st.midi_port_ok) { sx.textContent = 'porta ok, ligue o Gen MTC'; sx.className = 'st warn'; }
+  else { sx.textContent = 'opcional'; sx.className = 'st'; }
+  $('bLoop').disabled = st.loopmidi_job; $('bLoop').textContent = st.loopmidi_job ? 'instalando…' : (st.loopmidi_installed ? 'reinstalar / recriar porta' : 'instalar loopMIDI e criar a porta');
+  $('loopMsg').textContent = st.loopmidi_msg || '';
+  $('cAuto').checked = st.autostart; $('tPorta').textContent = st.porta; $('tVer2').textContent = st.version;
+  const u = st.update || {}; const su = $('stUpd');
+  if (u.available) { su.textContent = 'versão ' + u.latest + ' disponível'; su.className = 'st warn'; $('bUpd').style.display = ''; $('bUpd').disabled = u.busy; $('bUpd').textContent = u.busy ? 'baixando…' : 'baixar e instalar ' + u.latest; }
+  else if (u.checked) { su.textContent = 'atualizado'; su.className = 'st ok'; $('bUpd').style.display = 'none'; }
+  else { su.textContent = 'ainda não verificado'; su.className = 'st'; }
+  $('updMsg').textContent = u.msg || (u.available && u.notes ? u.notes : '');
+  if (st.os === 'mac') { $('mtcHint').innerHTML = 'Sem isto o Prompter já acompanha o Pro Tools com erro de ~0,1 s. Com o MTC (timecode MIDI) a posição vem frame a frame. No Mac o Prompter <b>cria sozinho</b> a porta MIDI virtual "Pro Tools MTC": basta ligar o gerador de MTC no Pro Tools (passos abaixo).'; $('bLoop').style.display = 'none'; $('bPort').style.display = 'none'; }
+  else if (st.loopmidi_installed) { $('bLoop').style.display = 'none'; }
+  $('tVer').textContent = 'Prompter ' + st.version + (st.frozen ? '' : ' (fonte)');
+}
+async function loadCfg() {
+  const r = await fetch('/api/songs'); const j = await r.json(); const c = j.config;
+  $('cSessAuto').checked = !!c.sessao_auto; $('cSep').checked = !!c.separar_vocal; $('cPT').checked = !!c.abrir_protools; $('cNav').checked = !!c.abrir_navegador; $('cUpd').checked = !!c.checar_atualizacao; $('cIdioma').value = c.idioma || ''; $('cModelo').value = c.modelo_whisper;
+}
+function saveCfg() {
+  dirty = false;
+  control({action:'config', pasta_musicas: $('cPasta').value, modelo_whisper: $('cModelo').value, idioma: $('cIdioma').value,
+           separar_vocal: $('cSep').checked, sessao_auto: $('cSessAuto').checked, abrir_protools: $('cPT').checked,
+           abrir_navegador: $('cNav').checked, checar_atualizacao: $('cUpd').checked}).then(load);
+}
+['cModelo','cIdioma','cSep','cSessAuto','cPT','cNav','cUpd'].forEach(id => $(id).addEventListener('change', saveCfg));
+$('cPasta').addEventListener('input', () => dirty = true);
+$('cPasta').addEventListener('change', saveCfg);
+$('cAuto').addEventListener('change', () => post({action:'autostart', on: $('cAuto').checked}));
+load(); loadCfg(); setInterval(load, 2500);
+</script>
+</body>
+</html>

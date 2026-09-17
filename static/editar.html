@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prompter · estúdio de letras</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/static/prompter.png">
+<style>
+  :root { --bg:#101012; --card:#18181c; --fg:#ececf0; --dim:#8b8b95; --line:#26262c; --ok:#5ee3a0; --warn:#f2c94c; --bad:#ff5c5c; --acc:#7cc0ff; --wave:#3b6f5a; --wave2:#5ee3a0; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:"Segoe UI",system-ui,sans-serif; font-size:15px; }
+  header { display:flex; gap:16px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font-size:17px; margin:0; font-weight:600; }
+  header .status { flex:1; }
+  a { color:var(--acc); text-decoration:none; }
+  button { background:#24242a; color:var(--fg); border:1px solid #33333a; border-radius:8px; padding:7px 12px; cursor:pointer; font-size:14px; white-space:nowrap; }
+  button:hover { background:#2d2d34; } button.primary { background:#2a4a6a; border-color:#3a6a9a; } button.danger { border-color:#6a2a2a; }
+  button.on { background:#1f4a35; border-color:#2f7a55; color:var(--ok); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { display:grid; grid-template-columns: 290px 1fr; gap:16px; padding:16px 20px; }
+  @media (max-width:860px) { main { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .songs .it { padding:9px 10px; border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:10px; }
+  .songs .it:hover { background:#202026; } .songs .it.sel { background:#24303c; }
+  .songs .it .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .songs .it.live .n::before { content:"▶ "; color:var(--ok); }
+  .st { font-size:11px; padding:2px 7px; border-radius:99px; background:#2a2a30; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
+  .st.pronto,.st.manual,.st.alinhado { color:var(--ok); } .st.transcrevendo,.st.pendente { color:var(--warn); } .st.erro,.st.sem-voz { color:var(--bad); }
+  .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--dim); font-size:13px; }
+  .meta input { background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:6px 8px; font-size:14px; }
+  #edName { font-size:17px; font-weight:600; flex:1; min-width:200px; }
+  .hint { color:var(--dim); font-size:13px; line-height:1.45; }
+  .status { font-size:13px; color:var(--dim); display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; margin-right:5px; }
+  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); }
+  kbd { background:#24242a; border:1px solid #3a3a42; border-radius:5px; padding:0 5px; font-size:12px; }
+  /* transporte */
+  #transport { display:flex; gap:10px; align-items:center; margin-top:12px; padding:10px 12px; background:#131316; border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
+  #transport .time { font-variant-numeric:tabular-nums; font-size:20px; min-width:150px; letter-spacing:.02em; }
+  #transport .time small { color:var(--dim); font-size:13px; }
+  #bPlay { width:46px; height:38px; font-size:18px; }
+  #wave { width:100%; height:110px; display:block; margin-top:10px; border-radius:8px; background:#0c0c0e; cursor:crosshair; }
+  #waveMsg { font-size:12px; color:var(--dim); margin-top:4px; }
+  /* linhas */
+  .lines { display:flex; flex-direction:column; gap:4px; margin-top:12px; }
+  .row { display:grid; grid-template-columns: 30px 88px 1fr auto; gap:6px; align-items:center; padding:2px 4px; border-radius:8px; }
+  .row .i { color:var(--dim); font-size:12px; text-align:right; }
+  .row input.t { width:100%; background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:6px 6px; font-variant-numeric:tabular-nums; font-size:13px; }
+  .row input.x { width:100%; background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 10px; font-size:16px; }
+  .row.cur { background:#182420; } .row.cur input.x { border-color:var(--ok); }
+  .row.past input.x { color:#b8b8c0; }
+  .row .ops { display:flex; gap:3px; opacity:.35; } .row:hover .ops, .row.cur .ops { opacity:1; }
+  .row .ops button { padding:4px 8px; font-size:13px; }
+  .words { grid-column: 2 / 5; display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 6px 0; }
+  .words span { font-size:12px; padding:1px 7px; border-radius:99px; background:#1e1e24; color:var(--dim); cursor:pointer; }
+  .words span.sung { color:var(--fg); background:#243a30; }
+  .words span:hover { color:var(--acc); }
+  textarea { width:100%; min-height:200px; background:#111114; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:15px; }
+  #prog { margin-top:12px; padding:12px; border-radius:10px; background:#1a1a20; }
+  #prog .bar { height:6px; background:#26262c; border-radius:3px; margin-top:8px; overflow:hidden; }
+  #prog .bar i { display:block; height:100%; background:var(--ok); width:0; transition:width .4s; }
+  .saved { color:var(--ok); font-size:13px; opacity:0; transition:opacity .3s; } .saved.show { opacity:1; }
+  .warn { color:var(--warn); }
+  details { margin-top:14px; } summary { cursor:pointer; color:var(--dim); }
+  .toolbar { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Estúdio de letras</h1>
+  <span class="status" id="status"></span>
+  <a href="/config">configuração</a>
+  <a href="/" target="_blank">abrir prompter ↗</a>
+  <a href="https://github.com/krocksss" target="_blank" title="feito por Marllon Machado" style="display:inline-flex;align-items:center;gap:6px;color:var(--dim)"><img src="/static/autor.png" style="width:22px;height:22px;border-radius:50%" alt="">krocksss</a>
+</header>
+<main>
+  <section class="card">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <strong style="flex:1">Músicas</strong>
+      <button onclick="control({action:'rescan'}).then(loadSongs)" title="reler a pasta e a sessão aberta">reler</button>
+    </div>
+    <div class="songs" id="songs"></div>
+    <div class="hint" style="margin-top:12px">Abra a sessão no Pro Tools e ela entra aqui sozinha. Ou coloque o MP3 na <a href="#" onclick="fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"action\":\"open_folder\"}'});return false">pasta das músicas</a>.</div>
+    <details>
+      <summary>Atalhos</summary>
+      <div class="hint" style="margin-top:6px">
+        <kbd>espaço</kbd> play/pause (fora do texto) · <kbd>Ctrl</kbd>+<kbd>espaço</kbd> dentro do texto<br>
+        <kbd>Enter</kbd> na linha = "esta linha começa AGORA" e vai para a próxima (marcação por toque)<br>
+        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> divide a linha no cursor · <kbd>Backspace</kbd> no início junta com a anterior<br>
+        <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> volta/avança 2 s · <kbd>Ctrl</kbd>+<kbd>S</kbd> salvar (salva sozinho também)
+      </div>
+    </details>
+  </section>
+  <section class="card" id="editor">
+    <div class="hint">Escolha uma música à esquerda.</div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let songs = {}, cfg = {}, sel = null, view = null, song = null;
+let rows = [];                    // modelo das linhas: {t,end,text,words,changed}
+let audio = new Audio(); audio.preload = 'auto';
+let peaks = null, peaksFor = null, duration = 0;
+let ptMode = true;                // comandar / seguir o Pro Tools quando conectado
+let hearHere = false;             // tocar o áudio local junto com o Pro Tools
+let base = 0, baseAt = 0, playing = false; // relógio vindo do servidor (Pro Tools)
+let saveTimer = null, dirtyRows = false;
+
+function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
+function transport(body) { return fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({song_id: sel}, body))}); }
+function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmt(t) { t = Math.max(0, t||0); const m = Math.floor(t/60), s = Math.floor(t%60), ms = Math.round((t - Math.floor(t))*1000); return m + ':' + String(s).padStart(2,'0') + '.' + String(ms).padStart(3,'0'); }
+function parseT(v) { v = String(v).trim(); const m = v.match(/^(\d+):(\d+(?:[.,]\d+)?)$/); if (m) return +m[1]*60 + parseFloat(m[2].replace(',','.')); const f = parseFloat(v.replace(',','.')); return isNaN(f) ? 0 : f; }
+
+// ---- lista de músicas
+async function loadSongs() {
+  const r = await fetch('/api/songs'); const j = await r.json();
+  songs = j.songs; cfg = j.config;
+  const ids = Object.keys(songs).sort((a,b) => songs[a].name.localeCompare(songs[b].name));
+  $('songs').innerHTML = ids.length ? ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
+      <span class="n">${esc(songs[id].name)}</span><span class="st ${songs[id].status}">${esc(songs[id].status)}</span></div>`).join('')
+    : '<div class="hint">Nenhuma música ainda. Abra uma sessão no Pro Tools ou coloque um MP3 na pasta.</div>';
+  if (sel && !songs[sel]) { sel = null; song = null; $('editor').innerHTML = '<div class="hint">Escolha uma música à esquerda.</div>'; }
+}
+async function select(id) {
+  if (sel !== id) { if (dirtyRows) await save(); sel = id; await loadSong(); }
+  loadSongs();
+}
+async function loadSong() {
+  const r = await fetch('/api/song/' + sel); song = await r.json();
+  rows = (song.lines || []).map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words || null, changed: false }));
+  dirtyRows = false;
+  renderEditor();
+  loadAudio();
+}
+
+// ---- editor
+function isPT() { return ptMode && view && view.ptsl; }
+function renderEditor() {
+  const s = song; if (!s) return;
+  const p = songs[sel] && songs[sel].progresso;
+  $('editor').innerHTML = `
+    <div class="meta">
+      <input id="edName" value="${esc(s.name)}" onchange="saveMeta()">
+      <span class="st ${s.status}" id="edStatus">${esc(s.status)}</span>
+      <span class="saved" id="saved">salvo ✓</span>
+    </div>
+    <div class="meta" style="margin-top:6px">
+      <span title="arquivo de áudio usado">origem: ${esc(s.source ? s.source.split(/[\\/]/).pop() : (s.candidates && s.candidates[0] ? s.candidates[0].split(/[\\/]/).pop() : '—'))}</span>
+      <span>ajuste da sessão (s): <input id="edOffset" value="${s.offset||0}" style="width:64px" onchange="saveMeta()" title="quanto o áudio está deslocado dentro da sessão do Pro Tools"></span>
+      <span id="sessWarn" class="warn"></span>
+      ${s.erro ? `<span style="color:var(--bad)">${esc(s.erro)}</span>` : ''}
+    </div>
+    <div id="prog" style="display:${s.status==='transcrevendo'||s.status==='pendente'?'block':'none'}">
+      <div id="progTxt">${s.status==='pendente' ? 'na fila para transcrever' : 'transcrevendo…'}</div><div class="bar"><i id="progBar"></i></div>
+    </div>
+    <div id="transport">
+      <button id="bPlay" onclick="togglePlay()" title="espaço">▶</button>
+      <button onclick="seekTo(0)" title="início">⏮</button>
+      <span class="time"><span id="tNow">0:00.000</span> <small>/ <span id="tDur">${fmt(s.duracao||0)}</span></small></span>
+      <button id="bPT" class="${ptMode?'on':''}" onclick="ptMode=!ptMode;renderTransport()" title="play/pause/seek aqui comandam o Pro Tools, e o Pro Tools comanda aqui">🔗 Pro Tools</button>
+      <button id="bHear" class="${hearHere?'on':''}" onclick="hearHere=!hearHere;renderTransport()" title="tocar o áudio local junto (o Pro Tools já toca o dele)">🔊 ouvir aqui</button>
+      <span class="hint" id="tSrc"></span>
+    </div>
+    <canvas id="wave" height="110"></canvas>
+    <div id="waveMsg"></div>
+    <div class="toolbar">
+      <button class="primary" onclick="save()">salvar</button>
+      <button onclick="realign()" title="usa as palavras que o sistema ouviu no áudio para dar tempo a cada verso, depois de você corrigir o texto">realinhar com o áudio</button>
+      <button onclick="$('pasteBox').style.display='block'">letra oficial (colar)</button>
+      <button onclick="toggleTracks()" title="escolher qual arquivo/faixa da sessão transcrever">♪ transcrever faixa…</button>
+      <button onclick="addRow(rows.length-1)">+ linha</button>
+      <span style="flex:1"></span>
+      <button onclick="control({action:'force_song',song_id:'${sel}'})" title="mostrar esta música no prompter mesmo que a sessão tenha outro nome">usar no prompter agora</button>
+      <button onclick="control({action:'force_song',song_id:null})">automático</button>
+      <button class="danger" onclick="del()">remover</button>
+    </div>
+    <div id="trackBox" style="display:none;margin-top:12px" class="meta">
+      <span>faixa (arquivo de áudio) para transcrever:</span>
+      <select id="trackSel" style="max-width:420px;background:#111114;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px">
+        ${(s.candidates||[]).concat((s.session_audio||[]).filter(c => !(s.candidates||[]).includes(c))).map(c => `<option value="${esc(c)}" ${c===s.source?'selected':''}>${esc(c.split(/[\\/]/).pop())}</option>`).join('')}
+      </select>
+      <button class="primary" onclick="retry($('trackSel').value)">transcrever esta faixa</button>
+      <button onclick="retry()">todas (escolhe a que tem mais voz)</button>
+      <span class="hint">Roda em segundo plano e nunca enquanto o Pro Tools toca. Se a letra oficial estiver colada, ela é realinhada no fim.</span>
+    </div>
+    <div id="pasteBox" style="display:none;margin-top:12px">
+      <textarea id="pasteTxt" placeholder="Cole a letra OFICIAL, uma linha por verso. Cada verso é casado com as palavras ouvidas no áudio e recebe o tempo real.">${esc(s.official||'')}</textarea>
+      <div class="meta" style="margin-top:6px">${s.words_n || (s.words && s.words.length) ? '' : 'sem transcrição ainda: os tempos ficam espaçados por igual até você marcar com Enter. '} <button class="primary" onclick="applyText()">alinhar com o áudio</button> <button onclick="$('pasteBox').style.display='none'">fechar</button></div>
+    </div>
+    <div class="lines" id="lines"></div>`;
+  renderRows(); renderTransport(); drawWave();
+}
+function renderRows() {
+  $('lines').innerHTML = rows.map((l, i) => `<div class="row" data-i="${i}">
+    <span class="i">${i+1}</span>
+    <input class="t" value="${fmt(l.t)}" title="início (m:ss.mmm) — clique para ir até aqui" onchange="setT(${i}, this.value)" onfocus="seekTo(rows[${i}].t, true)">
+    <input class="x" value="${esc(l.text)}" oninput="setText(${i}, this.value)" onkeydown="rowKey(event, ${i})" onfocus="focusRow(${i})">
+    <span class="ops"><button title="esta linha começa AGORA (Enter)" onclick="tap(${i})">⏱</button><button title="nova linha abaixo" onclick="addRow(${i})">+</button><button title="apagar" onclick="delRow(${i})">×</button></span>
+    <div class="words" id="w${i}"></div>
+  </div>`).join('');
+  markRows(-2);
+}
+let curRow = -2, focused = -1;
+function markRows(force) {
+  const t = songTime() + (view ? view.lead : 0.3);
+  let idx = -1; for (let i = 0; i < rows.length; i++) { if (rows[i].t <= t) idx = i; else break; }
+  if (idx !== curRow || force === -2) {
+    document.querySelectorAll('#lines .row').forEach((r, i) => { r.className = 'row ' + (i === idx ? 'cur' : i < idx ? 'past' : ''); });
+    curRow = idx;
+    if (idx >= 0 && playing && focused < 0) { const el = document.querySelector('#lines .row.cur'); if (el) el.scrollIntoView({block:'center', behavior:'smooth'}); }
+  }
+  // chips de palavras da linha atual/focada
+  const show = focused >= 0 ? focused : idx;
+  document.querySelectorAll('#lines .words').forEach((w, i) => {
+    if (i !== show) { if (w.innerHTML) w.innerHTML = ''; return; }
+    const ws = rows[i].words || [];
+    if (!ws.length) { w.innerHTML = ''; return; }
+    const tt = songTime();
+    if (w.dataset.n != ws.length) { w.innerHTML = ws.map((x, k) => `<span onclick="seekTo(${x.s})" title="${fmt(x.s)}">${esc(x.w)}</span>`).join(''); w.dataset.n = ws.length; }
+    w.querySelectorAll('span').forEach((sp, k) => sp.classList.toggle('sung', tt >= ws[k].s));
+  });
+}
+function focusRow(i) { focused = i; markRows(-2); }
+document.addEventListener('focusout', e => { if (e.target.classList && e.target.classList.contains('x')) { focused = -1; } });
+
+function setText(i, v) { rows[i].text = v; rows[i].words = null; rows[i].changed = true; touch(); }
+function setT(i, v) { const nt = parseT(v); const d = nt - rows[i].t; rows[i].t = nt; if (rows[i].end) rows[i].end += d; if (rows[i].words) rows[i].words = rows[i].words.map(w => ({w:w.w, s:w.s+d, e:w.e+d})); touch(); drawWave(); }
+function tap(i) {
+  const now = songTime(); const d = now - rows[i].t;
+  rows[i].t = now; if (rows[i].end) rows[i].end += d;
+  if (rows[i].words) rows[i].words = rows[i].words.map(w => ({w:w.w, s:w.s+d, e:w.e+d}));
+  if (i > 0 && rows[i-1].end > now) rows[i-1].end = now;
+  const inp = document.querySelector(`#lines .row[data-i="${i}"] input.t`); if (inp) inp.value = fmt(now);
+  touch(); drawWave(); markRows(-2);
+  const next = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (next) { next.focus(); next.scrollIntoView({block:'center'}); }
+}
+function addRow(i) { const t = rows[i] ? rows[i].t + 2 : 0; rows.splice(i+1, 0, {t, end: null, text: '', words: null, changed: true}); touch(); renderRows(); const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) n.focus(); }
+function delRow(i) { rows.splice(i, 1); touch(); renderRows(); drawWave(); }
+function rowKey(e, i) {
+  if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); splitRow(i, e.target.selectionStart); }
+  else if (e.key === 'Enter') { e.preventDefault(); tap(i); }
+  else if (e.key === 'Backspace' && e.target.selectionStart === 0 && e.target.selectionEnd === 0 && i > 0) { e.preventDefault(); mergeRow(i); }
+  else if (e.key === 'ArrowDown' && !e.altKey) { const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) { e.preventDefault(); n.focus(); } }
+  else if (e.key === 'ArrowUp' && !e.altKey) { const n = document.querySelector(`#lines .row[data-i="${i-1}"] input.x`); if (n) { e.preventDefault(); n.focus(); } }
+}
+function splitRow(i, pos) {
+  const r = rows[i];
+  if (pos > 0 && pos < r.text.length && r.text[pos] !== ' ' && r.text[pos-1] !== ' ') { const l = r.text.lastIndexOf(' ', pos), rr = r.text.indexOf(' ', pos); pos = (l < 0) ? (rr < 0 ? pos : rr) : (rr < 0 ? l : (pos - l <= rr - pos ? l : rr)); }
+  const a = r.text.slice(0, pos).trim(), b = r.text.slice(pos).trim();
+  if (!b) return;
+  let t2 = null, wa = null, wb = null;
+  if (r.words && r.words.length) { const na = a.split(/\s+/).filter(Boolean).length; wa = r.words.slice(0, na); wb = r.words.slice(na); if (wb.length) t2 = wb[0].s; }
+  if (t2 === null) { const end = r.end || (rows[i+1] ? rows[i+1].t : r.t + 4); t2 = r.t + (end - r.t) * (a.length / Math.max(1, r.text.length)); }
+  rows[i] = {t: r.t, end: t2, text: a, words: wa && wa.length ? wa : null, changed: true};
+  rows.splice(i+1, 0, {t: t2, end: r.end, text: b, words: wb && wb.length ? wb : null, changed: true});
+  touch(); renderRows(); drawWave(); const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) n.focus();
+}
+function mergeRow(i) {
+  const p = rows[i-1], r = rows[i]; const posEnd = p.text.length;
+  rows[i-1] = {t: p.t, end: r.end || p.end, text: (p.text + ' ' + r.text).replace(/\s+/g,' ').trim(), words: (p.words && r.words) ? p.words.concat(r.words) : null, changed: true};
+  rows.splice(i, 1); touch(); renderRows(); drawWave();
+  const n = document.querySelector(`#lines .row[data-i="${i-1}"] input.x`); if (n) { n.focus(); n.setSelectionRange(posEnd + 1, posEnd + 1); }
+}
+function touch() { dirtyRows = true; clearTimeout(saveTimer); saveTimer = setTimeout(save, 1500); }
+
+async function save() {
+  if (!sel) return;
+  clearTimeout(saveTimer);
+  const body = { lines: rows.map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words })),
+                 offset: parseFloat(($('edOffset')||{}).value)||0, name: ($('edName')||{}).value || undefined };
+  const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json(); dirtyRows = false;
+  if (j.song) { song = j.song; rows = (song.lines || []).map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words || null, changed: false }));
+    if (document.activeElement && document.activeElement.classList.contains('x')) { /* nao re-renderiza enquanto digita */ syncRowTimes(); } else renderRows();
+    $('edStatus').textContent = song.status; $('edStatus').className = 'st ' + song.status; }
+  const sv = $('saved'); if (sv) { sv.classList.add('show'); setTimeout(() => sv.classList.remove('show'), 1200); }
+  drawWave(); loadSongs();
+}
+function syncRowTimes() { document.querySelectorAll('#lines .row').forEach((r, i) => { if (rows[i]) { r.querySelector('.t').value = fmt(rows[i].t); } }); }
+async function saveMeta() { await save(); }
+async function realign() { if (!sel) return; clearTimeout(saveTimer);
+  const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ lines: rows.map(l => ({t:l.t, text:l.text})), realign: true })});
+  const j = await r.json(); if (j.song) { song = j.song; rows = (song.lines||[]).map(l => ({ t:l.t, end:l.end, text:l.text, words:l.words||null, changed:false })); dirtyRows = false; renderEditor(); } }
+async function retry(source) { clearTimeout(saveTimer); await fetch('/api/song/' + sel + '/retry', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(source ? {source} : {})}); await loadSongs(); await loadSong(); }
+function toggleTracks() { const b = $('trackBox'); b.style.display = b.style.display === 'none' ? 'flex' : 'none'; }
+async function del() { if (!confirm('Remover "' + song.name + '" da biblioteca? (os arquivos ficam)')) return; await fetch('/api/song/' + sel, {method:'DELETE'}); sel = null; song = null; $('editor').innerHTML = '<div class="hint">Escolha uma música à esquerda.</div>'; loadSongs(); }
+async function applyText() {
+  await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ official: $('pasteTxt').value })});
+  await loadSongs(); await loadSong();
+}
+
+// ---- áudio e forma de onda
+async function loadAudio() {
+  peaks = null; duration = song.duracao || 0; drawWave();
+  audio.src = '/api/song/' + sel + '/audio'; audio.load();
+  const msg = $('waveMsg'); if (msg) msg.textContent = 'lendo o áudio…';
+  try {
+    const r = await fetch('/api/song/' + sel + '/audio'); if (!r.ok) throw new Error('sem áudio');
+    const buf = await r.arrayBuffer();
+    const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
+    const ab = await ctx.decodeAudioData(buf);
+    duration = ab.duration; const ch = ab.getChannelData(0); const N = 1600; const step = Math.floor(ch.length / N) || 1;
+    const p = new Float32Array(N);
+    for (let i = 0; i < N; i++) { let m = 0; const o = i * step; for (let k = 0; k < step; k += 4) { const v = Math.abs(ch[o + k] || 0); if (v > m) m = v; } p[i] = m; }
+    peaks = p; peaksFor = sel; if (msg) msg.textContent = ''; if ($('tDur')) $('tDur').textContent = fmt(duration);
+  } catch (e) { if (msg) msg.textContent = 'sem forma de onda: ' + e.message; }
+  drawWave();
+}
+function drawWave() {
+  const c = $('wave'); if (!c) return;
+  const W = c.clientWidth || 800; if (c.width !== W * devicePixelRatio) { c.width = W * devicePixelRatio; c.height = 110 * devicePixelRatio; }
+  const g = c.getContext('2d'); g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  g.clearRect(0, 0, W, 110);
+  const dur = duration || (rows.length ? rows[rows.length-1].t + 5 : 240);
+  const t = songTime();
+  if (peaks && peaksFor === sel) {
+    const N = peaks.length; for (let i = 0; i < N; i++) { const x = i / N * W; const h = Math.max(1, peaks[i] * 96); const tt = i / N * dur; g.fillStyle = tt <= t ? '#5ee3a0' : '#3b6f5a'; g.fillRect(x, 55 - h/2, Math.max(1, W/N - 0.3), h); }
+  } else { g.fillStyle = '#1c1c22'; g.fillRect(0, 54, W, 2); }
+  // marcas das linhas
+  rows.forEach((l, i) => { const x = l.t / dur * W; g.fillStyle = i === curRow ? '#f2c94c' : 'rgba(236,236,240,.45)'; g.fillRect(x, 4, 1, 102); g.fillStyle = i === curRow ? '#f2c94c' : 'rgba(236,236,240,.5)'; g.font = '10px Segoe UI'; g.fillText(String(i+1), x + 3, 12); });
+  // cursor
+  const x = Math.min(W, t / dur * W); g.fillStyle = '#fff'; g.fillRect(x - 1, 0, 2, 110);
+}
+window.addEventListener('resize', drawWave);
+document.addEventListener('click', e => { if (e.target.id === 'wave') { const r = e.target.getBoundingClientRect(); const dur = duration || (rows.length ? rows[rows.length-1].t + 5 : 240); seekTo((e.clientX - r.left) / r.width * dur); } });
+
+// ---- transporte: local (áudio no navegador) ou Pro Tools (PTSL)
+function songTime() {
+  if (isPT()) return playing ? base + (performance.now() - baseAt) / 1000 : base;
+  return audio.currentTime;
+}
+function isPlaying() { return isPT() ? playing : !audio.paused; }
+async function togglePlay() {
+  if (isPT()) { await transport({action: playing ? 'stop' : 'play', seconds: playing ? undefined : songTime()}); }
+  else { if (audio.paused) { try { await audio.play(); } catch (e) {} } else audio.pause(); }
+  renderTransport();
+}
+async function seekTo(t, soft) {
+  t = Math.max(0, t);
+  if (isPT()) { if (soft && playing) return; base = t; baseAt = performance.now(); await transport({action:'locate', seconds: t}); }
+  else { audio.currentTime = t; }
+  drawWave(); markRows(-2);
+}
+function renderTransport() {
+  const b = $('bPlay'); if (!b) return;
+  b.textContent = isPlaying() ? '❚❚' : '▶';
+  $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl);
+  $('bHear').className = hearHere ? 'on' : ''; $('bHear').style.display = isPT() ? '' : 'none';
+  $('tSrc').textContent = isPT() ? ('comandando o Pro Tools' + (view.source === 'mtc' ? ' · posição por MTC' : ' · posição estimada')) : (view && view.ptsl ? 'áudio local (Pro Tools desligado do estúdio)' : 'áudio local');
+  const w = $('sessWarn'); if (w) w.textContent = (view && view.ptsl && view.session && song && view.song_id !== sel) ? ('sessão aberta no Pro Tools: "' + view.session + '" (outra música)') : '';
+  // áudio local acompanha o Pro Tools quando "ouvir aqui"
+  if (isPT()) { if (hearHere && playing) { if (audio.paused) { audio.currentTime = songTime(); audio.play().catch(()=>{}); } } else if (!audio.paused) audio.pause(); }
+}
+setInterval(() => { if (isPT() && hearHere && playing && !audio.paused && Math.abs(audio.currentTime - songTime()) > 0.25) audio.currentTime = songTime(); }, 600);
+audio.addEventListener('play', renderTransport); audio.addEventListener('pause', renderTransport);
+audio.addEventListener('loadedmetadata', () => { if (!duration) { duration = audio.duration; if ($('tDur')) $('tDur').textContent = fmt(duration); } });
+
+function frame() {
+  requestAnimationFrame(frame);
+  if (!song) return;
+  const t = songTime(); const el = $('tNow'); if (el) el.textContent = fmt(t);
+  markRows(); if (isPlaying() || (isPT() && playing)) drawWave();
+}
+requestAnimationFrame(frame);
+setInterval(() => { if (song && !isPlaying()) drawWave(); }, 500);
+
+// ---- teclado global
+document.addEventListener('keydown', e => {
+  const inText = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
+  if (e.key === ' ' && (!inText || e.ctrlKey)) { e.preventDefault(); togglePlay(); }
+  else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); seekTo(songTime() - 2); }
+  else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); seekTo(songTime() + 2); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
+});
+
+// ---- estado vindo do servidor (Pro Tools)
+function connect() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = e => {
+    const v = JSON.parse(e.data); const prev = view; view = v;
+    $('status').innerHTML = `<span><i class="dot ${v.ptsl?'ok':(v.protools?'warn':'')}"></i>${v.ptsl ? 'Pro Tools' : (v.protools ? 'Pro Tools (sem PTSL)' : 'Pro Tools fechado')}</span>` +
+      `<span><i class="dot ${v.session?'ok':''}"></i>${esc(v.session || 'sem sessão')}</span>` +
+      `<span><i class="dot ${v.midi?'ok':'warn'}"></i>${v.source === 'mtc' ? 'MTC' : (v.midi ? 'MTC (parado)' : 'MTC opcional')}</span>` +
+      `<span>${v.tc}${v.playing?' ▶':' ■'}</span>`;
+    if (sel && v.song_id === sel && v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
+    else if (sel && v.seconds != null && song) { base = v.seconds - (song.offset || 0); baseAt = performance.now(); }
+    playing = !!v.playing;
+    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source) renderTransport();
+    if (sel && v.song_id === sel && v.progresso) { const p = v.progresso; if ($('prog')) { $('prog').style.display = 'block'; $('progTxt').textContent = p.etapa + (p.pct != null ? ' · ' + p.pct + '%' : ''); $('progBar').style.width = (p.pct||0) + '%'; } }
+    if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') { loadSong(); }
+    if (prev && (prev.song_id !== v.song_id)) loadSongs();
+  };
+  es.onerror = () => { es.close(); setTimeout(connect, 1500); };
+}
+connect();
+loadSongs().then(async () => {   // ?transcrever=1&song=<id>: abre a música (ou a que está no Pro Tools) já no seletor de faixa
+  const q = new URLSearchParams(location.search);
+  if (q.get('transcrever')) {
+    let id = q.get('song'); if (!id) { try { const v = await (await fetch('/api/state')).json(); id = v.song_id; } catch (e) {} }
+    if (!id) { const ids = Object.keys(songs); id = ids[0]; }
+    if (id && songs[id]) { await select(id); const b = $('trackBox'); if (b) b.style.display = 'flex'; }
+  }
+});
+setInterval(async () => {   // status das músicas (transcrição em andamento) sem atrapalhar quem digita
+  const r = await fetch('/api/songs'); const j = await r.json();
+  const a = JSON.stringify(Object.values(j.songs).map(s => [s.status, s.progresso && s.progresso.pct, s.n_lines]));
+  const b = JSON.stringify(Object.values(songs).map(s => [s.status, s.progresso && s.progresso.pct, s.n_lines]));
+  if (a !== b) { const wasTr = songs[sel] && songs[sel].status === 'transcrevendo'; songs = j.songs; loadSongs();
+    if (sel && j.songs[sel]) { const p = j.songs[sel].progresso; if (p && $('prog')) { $('prog').style.display='block'; $('progTxt').textContent = p.etapa + (p.pct != null ? ' · ' + p.pct + '%' : ''); $('progBar').style.width = (p.pct||0) + '%'; }
+      if (wasTr && j.songs[sel].status !== 'transcrevendo') loadSong(); } }
+}, 2000);
+</script>
+</body>
+</html>

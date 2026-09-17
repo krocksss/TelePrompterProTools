@@ -1,0 +1,12 @@
+dist/
+build/work/
+build/autor_github.png
+data/
+musicas/
+config.json
+__pycache__/
+*.pyc
+*.old
+*.log
+*.tmp
+static/prompter.icns

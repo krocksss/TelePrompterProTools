@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.1"
+VERSION = "2.0.2"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -566,7 +566,19 @@ class Transcriber(threading.Thread):
                     stop.wait(2)
             threading.Thread(target=watch, daemon=True).start()
         try:
-            self.model = WhisperModel(repo, device="cpu", compute_type="int8", cpu_threads=int(CFG["cpu_threads"]))
+            last = None
+            for tentativa in range(6):
+                try:
+                    self.model = WhisperModel(repo, device="cpu", compute_type="int8", cpu_threads=int(CFG["cpu_threads"]))
+                    break
+                except Exception as e:   # logo apos o download o arquivo pode estar travado (antivirus) -> espera e tenta de novo
+                    last = e
+                    log("  modelo nao abriu (tentativa %d): %s" % (tentativa + 1, str(e)[:160]))
+                    if sid:
+                        self.set_prog(sid, "modelo baixado, aguardando o arquivo liberar (tentativa %d de 6)" % (tentativa + 2), None)
+                    time.sleep(8)
+            else:
+                raise last
         finally:
             stop.set()
         self.model_name = name
@@ -1720,6 +1732,11 @@ def main():
         webbrowser.open(url)
         return
     log("=== Prompter %s iniciando (%s, %s) ===" % (VERSION, "instalado" if FROZEN else "fonte", sys.platform))
+    with LIB.lock:   # musica que deu erro na ultima vez tenta de novo
+        for s in LIB.songs.values():
+            if s.get("status") == "erro":
+                s["status"] = "pendente"
+                s["erro"] = None
     state = State()
     try:
         import mido

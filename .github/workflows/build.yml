@@ -76,12 +76,19 @@ jobs:
         with:
           path: out
           merge-multiple: true
+      # um asset por passo (sequencial): subir os tres em paralelo dava erro 5xx "Unicorn" no maior
       - uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          files: out/PrompterSetup-*.exe
           generate_release_notes: true
           body: |
             **Prompter** · teleprompter sincronizado com o Pro Tools — por [Marllon Machado](https://github.com/krocksss)
 
             - **Windows**: `PrompterSetup-x.y.z.exe` (inclui o loopMIDI). Baixar, executar, Instalar.
             - **macOS**: `Prompter-x.y.z-mac-arm64.dmg` (Apple Silicon) ou `-x86_64.dmg` (Intel). Arraste para Aplicativos; na 1ª vez botão direito > Abrir.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/Prompter-*-mac-arm64.dmg
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/Prompter-*-mac-x86_64.dmg

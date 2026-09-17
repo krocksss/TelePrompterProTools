@@ -50,9 +50,7 @@ jobs:
             grep -v '^demucs' requirements.txt > /tmp/req.txt
             pip install -r /tmp/req.txt "numpy<2" "torch>=2.2,<2.3"
             pip install --no-deps demucs && pip install einops julius lameenc pyyaml safetensors tqdm
-            python -c "import site,os;open(os.path.join(site.getsitepackages()[0],'sphn.py'),'w').write('def read(*a, **k):
-    raise RuntimeError(\"sphn indisponivel no macOS Intel\")
-')"
+            python -c "import site,os;open(os.path.join(site.getsitepackages()[0],'sphn.py'),'w').write('def read(*a, **k): raise RuntimeError(chr(39)+chr(39))')"
           else
             pip install -r requirements.txt
           fi

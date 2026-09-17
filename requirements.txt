@@ -6,7 +6,7 @@ python-rtmidi>=1.5
 faster-whisper>=1.2
 ctranslate2>=4.5
 demucs>=4.1
-torch>=2.4
+torch>=2.2   # macOS Intel para em 2.2.x (numpy<2 nesse caso)
 av>=13
 soundfile>=0.12
 numpy

@@ -207,7 +207,7 @@ function render() {
   $('loopMsg').textContent = st.loopmidi_msg || '';
   $('cAuto').checked = st.autostart; $('tVer2').textContent = st.version;
   const u = st.update || {}; const su = $('stUpd');
-  if (u.available) { su.textContent = 'versão ' + u.latest + ' disponível'; su.className = 'st warn'; $('bUpd').style.display = ''; $('bUpd').disabled = u.busy; $('bUpd').textContent = u.busy ? 'baixando' : 'Baixar e instalar ' + u.latest; sec('cardUpd', 'warn'); }
+  if (u.available) { su.textContent = 'versão ' + u.latest + ' disponível'; su.className = 'st warn'; $('bUpd').style.display = ''; $('bUpd').disabled = u.busy; $('bUpd').textContent = u.busy ? (u.pct != null && u.pct < 100 ? 'baixando ' + u.pct + '%' : 'instalando') : 'Baixar e instalar ' + u.latest; sec('cardUpd', 'warn'); }
   else if (u.checked && u.latest) { su.textContent = 'atualizado'; su.className = 'st ok'; $('bUpd').style.display = 'none'; sec('cardUpd', 'ok'); }
   else { su.textContent = u.msg ? 'sem resposta do GitHub' : 'não verificado'; su.className = 'st'; sec('cardUpd', ''); }
   $('updMsg').textContent = u.msg || (u.available && u.notes ? u.notes : '');

@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.8"
+VERSION = "2.0.9"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -1279,7 +1279,7 @@ class PTWatcher(threading.Thread):
 # ----------------------------------------------------------------------------
 # Atualizacao: olha as releases do GitHub
 # ----------------------------------------------------------------------------
-UPDATE = {"checked": None, "latest": None, "url": None, "asset": None, "notes": None, "msg": None, "busy": False}
+UPDATE = {"checked": None, "latest": None, "url": None, "asset": None, "notes": None, "msg": None, "busy": False, "pct": None}
 
 
 def vtuple(v):
@@ -1341,9 +1341,16 @@ def install_update():
         import urllib.request
         if WIN:
             dst = Path(os.environ.get("TEMP", str(DATA))) / ("PrompterSetup-%s.exe" % UPDATE["latest"])
-            UPDATE["msg"] = "baixando a versão %s…" % UPDATE["latest"]
-            urllib.request.urlretrieve(UPDATE["asset"], dst)
-            UPDATE["msg"] = "instalando…"
+            UPDATE["msg"] = "baixando a versão %s" % UPDATE["latest"]
+            UPDATE["pct"] = 0
+
+            def hook(n, bs, total):
+                if total > 0:
+                    UPDATE["pct"] = min(99, int(n * bs * 100 / total))
+                    UPDATE["msg"] = "baixando a versão %s: %d%% de %d MB" % (UPDATE["latest"], UPDATE["pct"], total // 1048576)
+            urllib.request.urlretrieve(UPDATE["asset"], dst, reporthook=hook)
+            UPDATE["pct"] = 100
+            UPDATE["msg"] = "instalando: confirme o pedido de administrador do Windows; o Prompter reabre sozinho"
             subprocess.Popen([str(dst), "/SILENT", "/NORESTART"], creationflags=NOWIN)
             time.sleep(1)
             os._exit(0)
@@ -1529,7 +1536,7 @@ def setup_status(state, transcriber, ptlink):
         "autostart": autostart_get(), "pasta_musicas": CFG["pasta_musicas"], "n_songs": len(LIB.songs),
         "data_dir": str(DATA), "log": str(LOG_PATH),
         "update": {"available": update_available(), "latest": UPDATE["latest"], "url": UPDATE["url"], "asset": UPDATE["asset"],
-                   "notes": UPDATE["notes"], "msg": UPDATE["msg"], "busy": UPDATE["busy"], "checked": UPDATE["checked"]},
+                   "notes": UPDATE["notes"], "msg": UPDATE["msg"], "busy": UPDATE["busy"], "checked": UPDATE["checked"], "pct": UPDATE["pct"]},
     }
 
 

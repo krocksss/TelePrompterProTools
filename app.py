@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.3"
+VERSION = "2.0.4"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -673,10 +673,21 @@ class Transcriber(threading.Thread):
                     pass
             err = []
             threading.Thread(target=lambda: err.extend(p.stderr.read().splitlines()[-30:]), daemon=True).start()
+            last_out = [time.time()]
+
+            def watchdog():   # sem sinal de vida por 6 min -> mata (torch as vezes trava ao sair no Windows)
+                while p.poll() is None:
+                    if time.time() - last_out[0] > 360:
+                        log("  demucs sem progresso ha 6 min: encerrando")
+                        p.kill()
+                        break
+                    time.sleep(5)
+            threading.Thread(target=watchdog, daemon=True).start()
             for line in p.stdout:
+                last_out[0] = time.time()
                 if line.startswith("PROG"):
                     self.set_prog(sid, "isolando a voz", float(line.split()[1]))
-            p.wait(timeout=3600)
+            p.wait(timeout=600)
             if p.returncode != 0 or not out.exists():
                 log("  demucs falhou, usando o audio original:", "\n".join(err[-8:]))
                 return wav
@@ -764,7 +775,13 @@ class Transcriber(threading.Thread):
                     continue
                 self.wait_if_playing()
                 log("  arquivo:", os.path.basename(path))
-                lines, nwords, wl = self.transcribe_file(path, sid)
+                try:
+                    lines, nwords, wl = self.transcribe_file(path, sid)
+                except Exception as e:   # um arquivo ruim (nao decodifica) nao derruba a musica inteira
+                    if len(cands) == 1:
+                        raise
+                    log("  arquivo ignorado:", os.path.basename(path), str(e)[:120])
+                    continue
                 log("  ->", nwords, "palavras,", len(lines), "linhas")
                 if nwords > best_words:
                     best, best_words, best_file, best_wl = lines, nwords, path, wl
@@ -1091,6 +1108,69 @@ class PTLink(threading.Thread):
             self.stop()
         else:
             self.play()
+
+    def make_session(self, song):
+        """Cria (ou abre) a sessao do Pro Tools com o nome da musica e importa o audio no 0:00, numa faixa nova.
+        Sessao criada em <pasta_musicas>/Sessoes/<nome>/<nome>.ptx. Devolve dict com ok/msg."""
+        import ptsl.PTSL_pb2 as pt
+        from ptsl import ops
+        name = re.sub(r'[\\/:*?"<>|]+', " ", song["name"])
+        name = re.sub(r"\.(mp3|wav|m4a|flac|aif|aiff|ogg)$", "", name, flags=re.I).strip() or song["name"]
+        src = None
+        for c in [song.get("source")] + list(song.get("originals") or []) + list(song.get("candidates") or []):
+            if c and os.path.exists(c):
+                src = c
+                break
+        if not src:
+            return {"ok": False, "msg": "a música não tem arquivo de áudio"}
+        wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ".wav")
+        if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(src):
+            wav.parent.mkdir(exist_ok=True)
+            to_wav(src, wav)
+        base = Path(CFG["pasta_musicas"]) / "Sessoes"
+        base.mkdir(parents=True, exist_ok=True)
+        ptx = base / name / (name + ".ptx")
+        with self.lock:
+            e = self.engine
+            try:
+                cur = e.session_name()
+            except Exception:
+                cur = None
+            if cur and norm(cur) == norm(name):
+                return {"ok": True, "session": cur, "msg": "a sessão já está aberta no Pro Tools"}
+            if cur:
+                log("fechando a sessao", cur, "para abrir", name)
+                e.close_session(save_on_close=True)
+                time.sleep(1.5)
+            if ptx.exists():
+                e.open_session(str(ptx))
+                log("sessao aberta no Pro Tools:", ptx)
+                msg = "sessão aberta no Pro Tools"
+            else:
+                b = e.create_session(name, str(base))
+                b.wave_format()
+                b.sample_rate(44100)
+                b.bit_depth(24)
+                b.create()
+                time.sleep(1.0)
+                sp = e.session_path()
+                loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
+                ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
+                                  destination_path=str(Path(sp).parent / "Audio Files"),
+                                  audio_destination=pt.MDestination_NewTrack, audio_location=pt.MLocation_SessionStart, location_data=loc)
+                e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio, audio_data=ad))
+                e.save_session()
+                log("sessao criada no Pro Tools com o audio:", sp)
+                msg = "sessão criada no Pro Tools com a música na faixa 1"
+            with self.state.lock:
+                self.state.session = name
+                self.state.session_path = None
+                self.state.sel_seconds = 0.0
+                self.state.sel_at = time.monotonic()
+        with LIB.lock:
+            song["session_alias"] = name if norm(name) != norm(song["name"]) else None
+        LIB.save()
+        return {"ok": True, "session": name, "msg": msg}
 
 
 class PTWatcher(threading.Thread):
@@ -1553,7 +1633,9 @@ def run_web(state, transcriber, ptlink):
             sid = norm(stem).replace(" ", "-") or stem
             s = LIB.get(sid)
             with LIB.lock:
-                if s is not None:
+                if s is not None and transcriber.current == sid:
+                    pass   # ja esta sendo transcrita agora: nao mexe
+                elif s is not None:
                     s["status"] = "pendente"
                     s["erro"] = None
                     s["fonte_forcada"] = str(dst)
@@ -1576,6 +1658,8 @@ def run_web(state, transcriber, ptlink):
             body = await req.json()
         except Exception:
             pass
+        if transcriber.current == req.match_info["sid"]:
+            return web.json_response({"ok": True, "msg": "já está transcrevendo"})
         with LIB.lock:
             s["status"] = "pendente"
             s["erro"] = None
@@ -1662,6 +1746,21 @@ def run_web(state, transcriber, ptlink):
             transcriber.wake.set()
         return web.json_response(current_view(state))
 
+    async def api_pt_session(req):
+        """Cria/abre no Pro Tools a sessao desta musica (com o audio importado no 0:00)."""
+        body = await req.json()
+        s = LIB.get(body.get("song_id") or "")
+        if not s:
+            raise web.HTTPNotFound()
+        if not state.ptsl_ok:
+            return web.json_response({"ok": False, "msg": "Pro Tools não conectado"}, status=409)
+        try:
+            r = await asyncio.to_thread(ptlink.make_session, s)
+        except Exception as e:
+            log("erro criando sessao:", e)
+            return web.json_response({"ok": False, "msg": str(e)[:200]}, status=500)
+        return web.json_response(r)
+
     async def api_setup(req):
         return web.json_response(setup_status(state, transcriber, ptlink))
 
@@ -1710,6 +1809,7 @@ def run_web(state, transcriber, ptlink):
     app.router.add_post("/api/upload", api_upload)
     app.router.add_post("/api/control", api_control)
     app.router.add_post("/api/transport", api_transport)
+    app.router.add_post("/api/protools/session", api_pt_session)
     app.router.add_get("/api/setup", api_setup)
     app.router.add_post("/api/setup", api_setup_post)
     app.router.add_static("/static", STATIC)

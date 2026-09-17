@@ -16,7 +16,8 @@ hiddenimports = ["ptsl", "ptsl.ops", "ptsl.engine", "ptsl.client", "ptsl.errors"
                  "mido.backends.rtmidi", "rtmidi", "PIL.Image", "PIL.ImageDraw", "soundfile", "av", "wave",
                  "demucs.api", "demucs.pretrained", "demucs.htdemucs", "demucs.hdemucs", "demucs.apply",
                  "faster_whisper", "ctranslate2", "huggingface_hub", "tokenizers", "onnxruntime",
-                 "aiohttp", "grpc", "google.protobuf"]
+                 "aiohttp", "grpc", "google.protobuf",
+                 "numpy.core", "numpy.core.multiarray", "numpy.core._multiarray_umath", "numpy._core", "numpy._core.multiarray"]
 hiddenimports += ["pystray._darwin", "AppKit", "Foundation", "objc"] if MAC else ["pystray._win32", "win32gui", "win32api", "win32process", "winreg"]
 for pkg in ("demucs", "faster_whisper", "ctranslate2", "av", "soundfile", "julius", "openunmix", "einops",
             "grpc", "ptsl", "huggingface_hub", "tokenizers", "onnxruntime", "dora", "treetable",

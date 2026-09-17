@@ -147,7 +147,7 @@ async function loadSong() {
 }
 
 // ---- editor
-function isPT() { return ptMode && view && view.ptsl; }
+function isPT() { return ptMode && view && view.ptsl && !!view.session; }
 function renderEditor() {
   const s = song; if (!s) return;
   const p = songs[sel] && songs[sel].progresso;
@@ -209,11 +209,19 @@ function renderLink() {
   const el = $('linkBox'); if (!el || !song) return;
   const sess = view && view.session; const alias = song.session_alias;
   const same = sess && (norm(sess) === norm(song.name) || (alias && norm(alias) === norm(sess)));
+  const mk = '<button class="primary" onclick="makeSession()" title="cria a sessão no Pro Tools com o nome da música e o áudio na faixa 1 (ou abre, se já existir)">▣ criar/abrir sessão no Pro Tools com esta música</button>';
   if (same) { el.innerHTML = '🔗 vinculada à sessão <b>' + esc(sess) + '</b>'; return; }
-  if (sess) el.innerHTML = 'sessão aberta no Pro Tools: <b>' + esc(sess) + '</b> <button onclick="linkTo(' + JSON.stringify(sess).replace(/"/g,'&quot;') + ')" title="quando esta sessão estiver aberta, o prompter mostra esta música">vincular esta música a ela</button>' + (alias ? ' <span class="hint">(hoje vinculada a "' + esc(alias) + '")</span>' : '');
-  else el.innerHTML = alias ? 'vinculada à sessão "' + esc(alias) + '"' : '';
+  if (!view || !view.ptsl) { el.innerHTML = alias ? 'vinculada à sessão "' + esc(alias) + '"' : ''; return; }
+  if (sess) el.innerHTML = 'sessão aberta no Pro Tools: <b>' + esc(sess) + '</b> <button onclick="linkTo(' + JSON.stringify(sess).replace(/"/g,'&quot;') + ')" title="quando esta sessão estiver aberta, o prompter mostra esta música">vincular a ela</button> ' + mk;
+  else el.innerHTML = '<span class="warn">Pro Tools sem sessão aberta</span> ' + mk;
 }
 function norm(s) { return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+async function makeSession() {
+  const el = $('linkBox'); el.innerHTML = 'preparando a sessão no Pro Tools…';
+  const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel})});
+  const j = await r.json(); el.innerHTML = (j.ok ? '✔ ' : '✖ ') + esc(j.msg || '');
+  setTimeout(async () => { await loadSong(); renderLink(); }, 2500);
+}
 async function linkTo(sess) { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_alias: sess})}); await loadSong(); }
 
 // ---- arrastar / escolher arquivo
@@ -390,7 +398,7 @@ function renderTransport() {
   b.textContent = isPlaying() ? '❚❚' : '▶';
   $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl);
   $('bHear').className = hearHere ? 'on' : ''; $('bHear').style.display = isPT() ? '' : 'none';
-  $('tSrc').textContent = isPT() ? ('comandando o Pro Tools' + (view.source === 'mtc' ? ' · posição por MTC' : ' · posição estimada')) : (view && view.ptsl ? 'áudio local (Pro Tools desligado do estúdio)' : 'áudio local');
+  $('tSrc').textContent = isPT() ? ('comandando o Pro Tools' + (view.source === 'mtc' ? ' · posição por MTC' : ' · posição estimada')) : (view && view.ptsl ? (view.session ? 'áudio local (Pro Tools desligado do estúdio)' : 'áudio local · Pro Tools sem sessão aberta') : 'áudio local');
   const w = $('sessWarn'); if (w) w.textContent = (view && view.ptsl && view.session && song && view.song_id !== sel) ? ('sessão aberta no Pro Tools: "' + view.session + '" (outra música)') : '';
   // áudio local acompanha o Pro Tools quando "ouvir aqui"
   if (isPT()) { if (hearHere && playing) { if (audio.paused) { audio.currentTime = songTime(); audio.play().catch(()=>{}); } } else if (!audio.paused) audio.pause(); }

@@ -71,6 +71,29 @@
   .st.pronto, .st.alinhado, .st.manual { color:var(--accent); background:var(--accent-dim); }
   .st.transcrevendo, .st.pendente { color:var(--warn); background:#3a3020; }
   .st.erro, .st.sem-voz { color:var(--bad); background:#3a2422; }
+  .pastas .ph { display:flex; align-items:center; gap:8px; padding:9px 12px; border-radius:var(--r); cursor:pointer; }
+  .pastas .ph:hover { background:var(--panel-2); }
+  .pastas .ph.open { background:var(--panel-2); }
+  .pastas .ph .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  .pastas .ph .n::before { content:"▸ "; color:var(--faint); font-weight:400; }
+  .pastas .ph.open .n::before { content:"▾ "; }
+  .pastas .ph .cnt { font-size:11px; color:var(--faint); }
+  .pastas .ph .pt { font-size:11px; padding:3px 8px; border-radius:999px; background:var(--accent-dim); color:var(--accent); white-space:nowrap; }
+  .pastas .pi { display:flex; align-items:center; gap:6px; padding:6px 8px 6px 26px; border-radius:var(--r); cursor:pointer; font-size:14px; }
+  .pastas .pi:hover { background:var(--panel-2); }
+  .pastas .pi.sel { background:var(--panel-2); box-shadow:inset 3px 0 0 var(--accent); }
+  .pastas .pi .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pastas .pi .n::before { content:attr(data-i) ". "; color:var(--faint); }
+  .pastas .pi.live .n { color:var(--accent); }
+  .pastas .pi .ib, .songs .it .ib { font-size:12px; padding:2px 6px; border-radius:6px; background:transparent; border:1px solid transparent; color:var(--faint); }
+  .pastas .pi:hover .ib, .songs .it:hover .ib { color:var(--muted); border-color:var(--line-2); }
+  .pastas .pi .ib:hover, .songs .it .ib:hover { color:var(--fg); background:var(--panel); }
+  .pastas .pact { display:flex; gap:6px; padding:4px 8px 8px 26px; flex-wrap:wrap; }
+  .pastas .pact button { padding:5px 10px; font-size:12px; }
+  .pastas .pempty { padding:2px 8px 8px 26px; font-size:12px; color:var(--faint); }
+  .pastas .newp { display:flex; gap:6px; padding:4px 4px 0; }
+  .pastas .newp input { flex:1; min-width:0; padding:6px 9px; font-size:13px; }
+  .pastas .newp button { padding:6px 10px; font-size:13px; }
 
   #empty { max-width:720px; margin:6vh auto 0; animation:rise .5s var(--ease); }
   #empty h1 { font-size:34px; letter-spacing:-.02em; line-height:1.1; margin:0 0 8px; }
@@ -158,6 +181,7 @@
   <aside>
     <div id="drop" onclick="$('fileIn').click()"><b>Adicionar música</b>Arraste o MP3 ou WAV aqui, ou clique para escolher no computador.<div id="upBar"><i></i></div></div>
     <input type="file" id="fileIn" accept="audio/*,.mp3,.wav,.m4a,.flac,.aif,.aiff,.ogg" multiple style="display:none">
+    <div class="songs pastas" id="pastas"></div>
     <div class="songs" id="songs"></div>
     <button class="quiet" onclick="control({action:'rescan'}).then(loadSongs)" title="reler a pasta de músicas e a sessão aberta">Reler pasta</button>
   </aside>
@@ -167,6 +191,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let songs = {}, cfg = {}, sel = null, view = null, song = null;
+let pastas = {}, curPasta = null;   // pastas (setlists); curPasta = pasta aberta na lista
 let rows = [];
 let audio = new Audio(); audio.preload = 'auto';
 let peaks = null, peaksFor = null, duration = 0;
@@ -176,23 +201,57 @@ let saveTimer = null, dirtyRows = false;
 let curRow = -2, focused = -1;
 
 function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
-function transport(body) { return fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({song_id: sel}, body))}); }
+function transport(body) { return fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({song_id: sel, pasta: pastaOf(sel)}, body))}); }
+function pastaApi(body) { return fetch('/api/pasta', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}).then(r => r.json()).then(j => { if (j.pastas) { pastas = j.pastas; renderPastas(); loadSongs(); } return j; }); }
+function pastaOf(sid) { if (!sid) return null; if (curPasta && pastas[curPasta] && pastas[curPasta].songs.includes(sid)) return curPasta; if (view && view.pasta_id && pastas[view.pasta_id] && pastas[view.pasta_id].songs.includes(sid)) return view.pasta_id; const ids = Object.keys(pastas).filter(id => pastas[id].songs.includes(sid)); return ids.length === 1 ? ids[0] : null; }
+function pastaLoaded(pid, sid) { return !!(view && view.pasta_id === pid && (view.loaded || []).includes(sid)); }
 function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmt(t) { t = Math.max(0, t||0); const m = Math.floor(t/60), s = Math.floor(t%60), ms = Math.round((t - Math.floor(t))*1000); return m + ':' + String(s).padStart(2,'0') + '.' + String(ms).padStart(3,'0'); }
 function parseT(v) { v = String(v).trim(); const m = v.match(/^(\d+):(\d+(?:[.,]\d+)?)$/); if (m) return +m[1]*60 + parseFloat(m[2].replace(',','.')); const f = parseFloat(v.replace(',','.')); return isNaN(f) ? 0 : f; }
 function norm(s) { return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
 function isPT() { return ptMode && view && view.ptsl; }
-function sessionMatches() { if (!song || !view || !view.session) return false; if (view.session_song) return view.session_song === sel; if (!((view.session_audio_n || 0) > 0)) return false; return norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
+function sessionMatches() { if (!song || !view || !view.session) return false; if (view.loaded && view.loaded.length) return view.loaded.includes(sel); if (view.pasta_id) return false; if (!((view.session_audio_n || 0) > 0)) return false; return norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
 
 async function loadSongs() {
   const r = await fetch('/api/songs'); const j = await r.json();
-  songs = j.songs; cfg = j.config;
+  songs = j.songs; cfg = j.config; if (j.pastas) pastas = j.pastas;
   const ids = Object.keys(songs).sort((a,b) => songs[a].name.localeCompare(songs[b].name));
-  $('songs').innerHTML = ids.length ? '<div class="lbl">Suas músicas</div>' + ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
-      <span class="n">${esc(songs[id].name)}</span><span class="st ${songs[id].status}">${statusLabel(songs[id].status)}</span></div>`).join('') : '';
+  const cp = curPasta && pastas[curPasta] ? pastas[curPasta] : null;
+  $('songs').innerHTML = ids.length ? '<div class="lbl">' + (cp ? 'Suas músicas · clique em + para pôr na pasta "' + esc(cp.name) + '"' : 'Suas músicas') + '</div>' + ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
+      <span class="n">${esc(songs[id].name)}</span>${cp && !cp.songs.includes(id) ? `<button class="ib" onclick="event.stopPropagation();pastaApi({action:'add',pasta_id:'${curPasta}',song_id:'${id}'})" title="pôr na pasta">+</button>` : ''}<span class="st ${songs[id].status}">${statusLabel(songs[id].status)}</span></div>`).join('') : '';
+  renderPastas();
   if (sel && !songs[sel]) { sel = null; song = null; }
   if (!sel) renderEmpty();
 }
+function renderPastas() {
+  const el = $('pastas'); if (!el) return;
+  const ids = Object.keys(pastas).sort((a,b) => pastas[a].name.localeCompare(pastas[b].name));
+  let h = '<div class="lbl">Pastas (setlists): uma sessão no Pro Tools com todas as músicas, trocar é instantâneo</div>';
+  for (const id of ids) {
+    const p = pastas[id], open = id === curPasta, live = view && view.pasta_id === id;
+    h += `<div class="ph ${open?'open':''}" onclick="togglePasta('${id}')"><span class="n">${esc(p.name)}</span><span class="cnt">${p.songs.length}</span>${live ? '<span class="pt">no Pro Tools</span>' : ''}</div>`;
+    if (!open) continue;
+    if (!p.songs.length) h += '<div class="pempty">Vazia. Clique no + de uma música abaixo para colocar aqui.</div>';
+    p.songs.forEach((sid, i) => { const sg = songs[sid]; if (!sg) return;
+      const ld = pastaLoaded(id, sid);
+      h += `<div class="pi ${sid===sel?'sel':''} ${view && view.song_id===sid && live ? 'live':''}" onclick="select('${sid}')" title="${ld ? 'na linha do tempo do Pro Tools' : 'ainda não está no Pro Tools: o play coloca'}">
+        <span class="n" data-i="${i+1}">${esc(sg.name)}</span><span class="st ${sg.status}">${statusLabel(sg.status)}</span>
+        <button class="ib" onclick="event.stopPropagation();pastaApi({action:'move',pasta_id:'${id}',song_id:'${sid}',dir:-1})" title="subir">↑</button>
+        <button class="ib" onclick="event.stopPropagation();pastaApi({action:'move',pasta_id:'${id}',song_id:'${sid}',dir:1})" title="descer">↓</button>
+        <button class="ib" onclick="event.stopPropagation();pastaApi({action:'remove',pasta_id:'${id}',song_id:'${sid}'})" title="tirar da pasta">✕</button></div>`; });
+    const missing = p.songs.filter(sid => !pastaLoaded(id, sid)).length;
+    const busy = view && view.pasta_progresso && view.pasta_progresso.pasta === p.name;
+    h += `<div class="pact">` +
+      (p.songs.length ? `<button class="${live && !missing ? 'on' : 'primary'}" ${busy || !(view && view.ptsl) ? 'disabled' : ''} onclick="event.stopPropagation();pastaApi({action:'load',pasta_id:'${id}'})" title="${view && view.ptsl ? '' : 'abra o Pro Tools primeiro'}">${busy ? 'Carregando…' : (live && !missing ? 'No Pro Tools ✓' : (live ? 'Colocar as que faltam' : 'Carregar no Pro Tools'))}</button>` : '') +
+      `<button class="quiet" onclick="event.stopPropagation();renamePasta('${id}')">Renomear</button><button class="quiet danger" onclick="event.stopPropagation();delPasta('${id}')">Apagar</button></div>`;
+  }
+  h += `<div class="newp"><input id="newPasta" placeholder="nova pasta (ex.: Show sábado)" onkeydown="if(event.key==='Enter')newPasta()"><button onclick="newPasta()">Criar</button></div>`;
+  el.innerHTML = h;
+}
+function togglePasta(id) { curPasta = curPasta === id ? null : id; renderPastas(); loadSongs(); renderGuide(); }
+async function newPasta() { const v = ($('newPasta').value || '').trim(); if (!v) return; const j = await pastaApi({action:'create', name:v}); curPasta = j.pasta_id; renderPastas(); loadSongs(); }
+function renamePasta(id) { const v = prompt('Nome da pasta', pastas[id].name); if (v && v.trim()) pastaApi({action:'rename', pasta_id:id, name:v.trim()}); }
+function delPasta(id) { if (confirm('Apagar a pasta "' + pastas[id].name + '"? As músicas continuam na lista; a sessão no Pro Tools não é apagada.')) { if (curPasta === id) curPasta = null; pastaApi({action:'delete', pasta_id:id}); } }
 function statusLabel(s) { return ({pendente:'na fila', transcrevendo:'transcrevendo', pronto:'pronta', alinhado:'pronta', manual:'pronta', erro:'erro', 'sem-voz':'sem voz'})[s] || s; }
 async function select(id) {
   if (sel !== id) { if (dirtyRows) await save(); sel = id; await loadSong(); }
@@ -213,7 +272,7 @@ function renderEmpty() {
     <div id="bigDrop" onclick="$('fileIn').click()"><div class="big">Arraste o MP3 ou WAV para cá</div><div class="sm">ou clique para procurar no computador</div></div>
     <div class="steps">
       <div><b>1. Solte a música</b><span>Ela entra na lista e começa a ser transcrita. Na primeira vez o modelo é baixado (1,6 GB).</span></div>
-      <div><b>2. Pro Tools pronto sozinho</b><span>Sem sessão aberta, o Prompter cria a sessão com a música. Sessão vazia, ele coloca a música nela. Cada música fica na própria sessão: ao trocar de música e dar play, o Pro Tools abre a sessão dela.</span></div>
+      <div><b>2. Pro Tools pronto sozinho</b><span>Sem sessão aberta, o Prompter cria a sessão com a música. Sessão vazia, ele coloca a música nela. Crie uma pasta com as músicas do show: vira UMA sessão com todas enfileiradas, e trocar de música é na hora.</span></div>
       <div><b>3. Aperte play</b><span>Aqui ou no Pro Tools: os dois andam juntos e o teleprompter acompanha.</span></div>
     </div></div>`;
 }
@@ -280,6 +339,17 @@ function renderGuide() {
     cls = ''; n = '2'; h = view && view.protools ? 'Pro Tools aberto, sem conexão' : 'Abra o Pro Tools';
     txt = 'A letra está pronta. Com o Pro Tools aberto, o play daqui e de lá andam juntos.';
     act = '<button onclick="openPT()">Abrir o Pro Tools</button>';
+  } else if (view.pasta_progresso && (pastaOf(sel) ? pastas[pastaOf(sel)].name === view.pasta_progresso.pasta : true)) {
+    cls = 'busy'; n = '2'; h = 'Carregando a pasta "' + esc(view.pasta_progresso.pasta) + '" no Pro Tools'; txt = esc(view.pasta_progresso.msg); bar = '<div class="bar indet"><i></i></div>';
+  } else if (pastaOf(sel) && !pastaLoaded(pastaOf(sel), sel)) {
+    const pp = pastas[pastaOf(sel)];
+    cls = ''; n = '2'; h = view.pasta_id === pastaOf(sel) ? 'Esta música ainda não está na linha do tempo da pasta' : 'A pasta "' + esc(pp.name) + '" não está aberta no Pro Tools';
+    txt = 'Aperte play: o Prompter ' + (view.pasta_id === pastaOf(sel) ? 'coloca a música no fim da linha do tempo e toca.' : 'abre a sessão da pasta com todas as músicas enfileiradas na linha do tempo (só na primeira vez) e toca esta.');
+    act = `<button class="primary" onclick="pastaApi({action:'load',pasta_id:'${pastaOf(sel)}'})">Carregar a pasta no Pro Tools</button>`;
+  } else if (pastaOf(sel) && pastaLoaded(pastaOf(sel), sel)) {
+    cls = 'ok'; n = '✓'; h = 'Na pasta "' + esc(pastas[pastaOf(sel)].name) + '", pronta no Pro Tools';
+    txt = 'Aperte play: o Pro Tools pula para esta música na hora. Deixando tocar, o teleprompter passa para a próxima sozinho.';
+    act = '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>';
   } else if (!sessionMatches()) {
     cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Sem sessão aberta no Pro Tools';
     txt = view.session ? `Aberta agora: "${esc(view.session)}". Aperte play: o Prompter carrega esta música no Pro Tools (na sessão dela) antes de tocar.` : 'Aperte play: o Prompter cria a sessão com a música na faixa 1 e toca.';
@@ -444,8 +514,9 @@ async function togglePlay() {
   if (isPT()) {
     if (playing) { await transport({action:'stop'}); }
     else {
-      const needs = !(sessionMatches() && (view.session_audio_n || 0) > 0);
-      if (needs) { preparing = true; const g = $('guide'); if (g) { g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Carregando a música no Pro Tools</h3><p>Convertendo o áudio e preparando a sessão. O play começa em seguida.</p><div class="bar indet"><i></i></div></div><div></div>'; } }
+      const pp = pastaOf(sel);
+      const needs = pp ? !pastaLoaded(pp, sel) : !(sessionMatches() && (view.session_audio_n || 0) > 0);
+      if (needs) { preparing = true; const g = $('guide'); if (g) { g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>' + (pp ? 'Carregando a pasta "' + esc(pastas[pp].name) + '" no Pro Tools' : 'Carregando a música no Pro Tools') + '</h3><p>' + (pp ? 'Abrindo a sessão da pasta e colocando as músicas na linha do tempo. Só na primeira vez; depois trocar é na hora.' : 'Convertendo o áudio e preparando a sessão. O play começa em seguida.') + '</p><div class="bar indet"><i></i></div></div><div></div>'; } }
       try {
         const r = await transport({action:'play', seconds: songTime(), ensure: true});
         const j = await r.json();
@@ -513,9 +584,10 @@ function connect() {
       `<span class="pill ${v.session ? 'ok' : ''}"><i class="led"></i>${v.session ? esc(v.session) : 'sem sessão'}</span>` +
       `<span class="pill" id="tcPill">${v.tc} ${v.playing ? '▶' : '■'}</span>`;
     if (sel && v.song_id === sel && v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
-    else if (sel && v.seconds != null && song) { base = v.seconds - (song.offset || 0); baseAt = performance.now(); }
+    else if (sel && v.seconds != null && song) { const pp = pastaOf(sel); const lay = pp && pastas[pp].layout && pastas[pp].layout[sel]; base = v.seconds - (lay ? lay.offset : (song.offset || 0)); baseAt = performance.now(); }
     playing = !!v.playing;
-    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id || prev.session_audio_n !== v.session_audio_n) { renderTransport(); renderGuide(); }
+    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id || prev.session_audio_n !== v.session_audio_n || prev.pasta_id !== v.pasta_id || JSON.stringify(prev.loaded) !== JSON.stringify(v.loaded) || JSON.stringify(prev.pasta_progresso) !== JSON.stringify(v.pasta_progresso)) { renderTransport(); renderGuide(); renderPastas(); }
+    if (prev && (prev.pasta_progresso && !v.pasta_progresso)) loadSongs();
     if (sel && v.song_id === sel && v.progresso && songs[sel]) { songs[sel].progresso = v.progresso; renderGuide(); }
     if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') loadSong();
     if (prev && prev.song_id !== v.song_id) loadSongs();

@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.18"
+VERSION = "2.0.19"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -217,20 +217,34 @@ class Library:
     def __init__(self):
         self.lock = threading.RLock()
         self.songs = {}
+        self.pastas = {}   # setlists: {pid: {name, songs: [sid...], layout: {sid: {offset, end}}, session_file, session_name, progresso}}
         if LIB_PATH.exists():
             try:
-                self.songs = json.loads(LIB_PATH.read_text(encoding="utf-8")).get("songs", {})
+                d = json.loads(LIB_PATH.read_text(encoding="utf-8"))
+                self.songs = d.get("songs", {})
+                self.pastas = d.get("pastas", {})
             except Exception as e:
                 log("library.json invalido:", e)
 
     def save(self):
         with self.lock:
             tmp = LIB_PATH.with_suffix(".tmp")
-            tmp.write_text(json.dumps({"songs": self.songs}, ensure_ascii=False, indent=1), encoding="utf-8")
+            tmp.write_text(json.dumps({"songs": self.songs, "pastas": self.pastas}, ensure_ascii=False, indent=1), encoding="utf-8")
             os.replace(tmp, LIB_PATH)
 
     def get(self, sid):
         return self.songs.get(sid)
+
+    def pid_of(self, pasta):
+        with self.lock:
+            for pid, p in self.pastas.items():
+                if p is pasta:
+                    return pid
+        return None
+
+    def pastas_with(self, sid):
+        with self.lock:
+            return [pid for pid, p in self.pastas.items() if sid in (p.get("songs") or [])]
 
     def find_by_session(self, session_name):
         """Casa o nome da sessao do Pro Tools com uma musica da biblioteca."""
@@ -267,7 +281,17 @@ class Library:
 LIB = Library()
 
 AUDIO_EXT = {".wav", ".mp3", ".m4a", ".flac", ".aif", ".aiff", ".ogg", ".wma", ".aac"}
-SKIP_DIRS = {"audio files", "session file backups", "bounced files", "clip groups", "renders", "video files", "wavecache"}
+SKIP_DIRS = {"audio files", "session file backups", "bounced files", "clip groups", "renders", "video files", "wavecache",
+             "sessoes"}   # Sessoes/ = sessoes que o PROPRIO Prompter cria (musicas avulsas e pastas): nao sao musicas novas
+
+
+def in_sessoes(path):
+    """O caminho esta dentro de <pasta_musicas>/Sessoes (sessao criada pelo Prompter)?"""
+    try:
+        base = os.path.normcase(os.path.abspath(str(Path(CFG["pasta_musicas"]) / "Sessoes")))
+        return os.path.normcase(os.path.abspath(str(path))).startswith(base + os.sep)
+    except Exception:
+        return False
 
 
 def folder_info(d):
@@ -332,8 +356,9 @@ def register(found):
     return changed
 
 
-def scan_folder():
-    """Descobre musicas na pasta configurada: pasta com .ptx (sessao), pasta com audio, ou audio solto na raiz."""
+def scan_folder(purge=False):
+    """Descobre musicas na pasta configurada: pasta com .ptx (sessao), pasta com audio, ou audio solto na raiz.
+    purge=True (so na partida, antes da transcricao comecar): tira da lista as copias vindas de Sessoes/."""
     root = Path(CFG["pasta_musicas"])
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -356,7 +381,16 @@ def scan_folder():
         if info:
             found[info["name"]] = info
             dirnames[:] = []
-    return register(found)
+    # Entradas antigas criadas a partir de Sessoes/ (versoes ate 2.0.17 varriam essa pasta): eram copias das
+    # proprias musicas, retranscritas a toa. Somem daqui; os arquivos ficam.
+    with LIB.lock:
+        dupes = [sid for sid, s in LIB.songs.items() if purge and s.get("folder") and in_sessoes(s["folder"])]
+        for sid in dupes:
+            log("removendo da lista a copia vinda de Sessoes/:", LIB.songs[sid]["name"])
+            del LIB.songs[sid]
+    if dupes:
+        LIB.save()
+    return register(found) or bool(dupes)
 
 
 def song_stem(song):
@@ -375,6 +409,39 @@ def audio_is_song(filename, stem):
     return re.match(re.escape(stem.lower()) + r"(_\d+k)?(-\d+)?\.[a-z0-9]+$", filename.lower()) is not None
 
 
+PASTA_GAP = 4.0   # segundos de silencio entre uma musica e a seguinte na linha do tempo da sessao de uma pasta
+
+
+def same_file(a, b):
+    try:
+        return bool(a) and bool(b) and os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b)))
+    except Exception:
+        return False
+
+
+def safe_name(name):
+    n = re.sub(r'[\\/:*?"<>|]+', " ", name or "")
+    n = re.sub(r"\.(mp3|wav|m4a|flac|aif|aiff|ogg)$", "", n, flags=re.I).strip()
+    return n or "Pasta"
+
+
+def pasta_song_at(pasta, secs):
+    """Qual musica da pasta esta tocando neste ponto da linha do tempo: a ultima cujo inicio ja passou
+    (o intervalo depois dela ainda e dela); antes da primeira, a primeira."""
+    layout = pasta.get("layout") or {}
+    order = [sid for sid in (pasta.get("songs") or []) if sid in layout]
+    if not order:
+        return None
+    order.sort(key=lambda s: layout[s]["offset"])
+    cur = order[0]
+    for sid in order:
+        if layout[sid]["offset"] <= secs + 0.001:
+            cur = sid
+        else:
+            break
+    return cur
+
+
 def session_audio_count(ptx_path):
     """Quantos arquivos de audio existem em 'Audio Files' da sessao (0 = sessao muda)."""
     try:
@@ -388,6 +455,8 @@ def add_session_folder(path):
     """Sessao aberta no Pro Tools (caminho do .ptx) -> entra na biblioteca automaticamente."""
     try:
         p = Path(path)
+        if in_sessoes(p):
+            return False   # sessao criada pelo Prompter: a musica (ou a pasta) ja esta na biblioteca
         d = p.parent if p.suffix.lower() in (".ptx", ".ptf") else p
         info = folder_info(d)
         if not info:
@@ -923,6 +992,7 @@ class State:
         self.session_path = None
         self.session_audio_n = None   # quantos arquivos de audio a sessao aberta tem (None = desconhecido)
         self.session_song = None      # id da musica cujo audio esta na sessao aberta (None = nenhuma da biblioteca)
+        self.session_pasta = None     # id da pasta (setlist) cuja sessao esta aberta: a musica e dada pela posicao na linha do tempo
         # geral
         self.session = None
         self.pt_found = False
@@ -1277,6 +1347,19 @@ class PTLink(threading.Thread):
         st = self.state
         sp, name = st.session_path, st.session
         found = None
+        pasta_id = None
+        if name:
+            with LIB.lock:   # sessao de uma pasta (setlist): a musica vem da posicao na linha do tempo
+                for pid, p in LIB.pastas.items():
+                    if (p.get("session_file") and same_file(p["session_file"], sp)) or (p.get("session_name") and norm(p["session_name"]) == norm(name)):
+                        pasta_id = pid
+                        break
+        if pasta_id != st.session_pasta:
+            log("sessao", name, "e a pasta", LIB.pastas[pasta_id]["name"] if pasta_id else "(nenhuma)")
+        st.session_pasta = pasta_id
+        if pasta_id:
+            st.session_song = None
+            return None
         if name and sp:
             try:
                 af = Path(sp).parent / "Audio Files"
@@ -1313,8 +1396,10 @@ class PTLink(threading.Thread):
         st = self.state
         if not st.session:
             return False
-        if st.session_song is None and st.session_path:
+        if st.session_song is None and st.session_pasta is None and st.session_path:
             self.resolve_session_song()
+        if st.session_pasta:
+            return self.pasta_loaded(LIB.pastas.get(st.session_pasta), LIB.sid_of(song))
         if st.session_song is not None:
             return st.session_song == LIB.sid_of(song)
         # Sessao com audio que nao veio do Prompter (a sessao real do show): vale o vinculo que o usuario declarou
@@ -1326,6 +1411,122 @@ class PTLink(threading.Thread):
 
     def session_matches(self, song):
         return self.song_loaded(song)
+
+    # ---- pastas (setlists): uma sessao com todas as musicas enfileiradas na linha do tempo ----
+    def pasta_session_open(self, pasta):
+        st = self.state
+        if not pasta or not st.session:
+            return False
+        return (pasta.get("session_file") and same_file(pasta["session_file"], st.session_path)) or \
+               (pasta.get("session_name") and norm(pasta["session_name"]) == norm(st.session))
+
+    def pasta_loaded(self, pasta, sid):
+        """A sessao da pasta esta aberta E esta musica ja esta na linha do tempo dela?"""
+        return bool(pasta and sid and self.pasta_session_open(pasta) and sid in (pasta.get("layout") or {}) and sid in (pasta.get("songs") or []))
+
+    def load_pasta(self, pasta):
+        """Deixa a sessao da pasta aberta no Pro Tools com TODAS as musicas dela na linha do tempo, uma depois da
+        outra (PASTA_GAP s de intervalo), cada uma na propria faixa. So importa o que ainda falta; a sessao anterior
+        e salva e fechada. Devolve dict ok/msg."""
+        import ptsl.PTSL_pb2 as pt
+        from ptsl import ops
+        pid = LIB.pid_of(pasta)
+        name = safe_name(pasta.get("name"))
+        base = Path(CFG["pasta_musicas"]) / "Sessoes"
+        base.mkdir(parents=True, exist_ok=True)
+        ptx = base / name / (name + ".ptx")
+        prev = pasta.get("session_file")
+        if prev and os.path.exists(prev):
+            ptx = Path(prev)
+            name = ptx.stem
+        pasta["progresso"] = {"msg": "abrindo a sessão da pasta no Pro Tools"}
+        try:
+            with self.lock:
+                e = self.engine
+                try:
+                    cur = e.session_name()
+                    cur_path = e.session_path()
+                except Exception:
+                    cur, cur_path = None, None
+                if cur and (same_file(cur_path, ptx) or norm(cur) == norm(name)):
+                    sp = cur_path
+                else:
+                    if cur:
+                        log("fechando a sessao", cur, "para abrir a pasta", name)
+                        e.close_session(save_on_close=True)
+                        time.sleep(1.5)
+                    if ptx.exists():
+                        e.open_session(str(ptx))
+                        log("sessao da pasta aberta:", ptx)
+                    else:
+                        b = e.create_session(name, str(base))
+                        b.wave_format()
+                        b.sample_rate(44100)
+                        b.bit_depth(24)
+                        b.create()
+                        time.sleep(1.0)
+                        log("sessao da pasta criada:", name)
+                    sp = e.session_path()
+                sr = self.session_rate()
+                af = Path(sp).parent / "Audio Files"
+                try:
+                    files = [f.name for f in af.iterdir()] if af.exists() else []
+                except Exception:
+                    files = []
+                with LIB.lock:
+                    layout = pasta.setdefault("layout", {})
+                    for sid in list(layout):   # sessao refeita / audio apagado: o registro nao vale mais
+                        s = LIB.get(sid)
+                        stem = song_stem(s) if s else None
+                        if not stem or not any(audio_is_song(f, stem) for f in files):
+                            del layout[sid]
+                    order = list(pasta.get("songs") or [])
+                    end = max((l["end"] for l in layout.values()), default=0.0)
+                    missing = [sid for sid in order if sid not in layout and LIB.get(sid)]
+                with self.state.lock:
+                    self.state.session = name
+                    self.state.session_path = sp
+                    self.state.session_pasta = pid
+                    self.state.session_song = None
+                for i, sid in enumerate(missing):
+                    song = LIB.get(sid)
+                    pasta["progresso"] = {"msg": "colocando \"%s\" na linha do tempo (%d de %d)" % (song["name"], i + 1, len(missing))}
+                    wav = self.song_wav(song, sr)
+                    if wav is None:
+                        log("pasta", name, ": musica sem audio, pulada:", song["name"])
+                        continue
+                    off = 0.0 if not layout else end + PASTA_GAP
+                    dur = audio_duration(wav) or float(song.get("duracao") or 0)
+                    ad = dict(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio, destination_path=str(af),
+                              audio_destination=pt.MDestination_NewTrack)
+                    try:
+                        loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.Samples, location_value=str(int(round(off * sr))))
+                        e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio,
+                                                    audio_data=pt.AudioData(audio_location=pt.MLocation_Spot, location_data=loc, **ad)))
+                    except Exception as ex:   # spot por amostras recusado: seleciona o ponto e importa "na selecao"
+                        log("import spot falhou (%s); tentando na selecao" % str(ex)[:120])
+                        e.set_timeline_selection(in_time=self._secs(off), location_type=pt.TLType_Seconds)
+                        e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio,
+                                                    audio_data=pt.AudioData(audio_location=pt.MLocation_Selection, **ad)))
+                    with LIB.lock:
+                        layout[sid] = {"offset": round(off, 3), "end": round(off + dur, 3), "duracao": round(dur, 2)}
+                    end = off + dur
+                    LIB.save()
+                    log("pasta", name, ": \"%s\" em %.1f s (%d Hz)" % (song["name"], off, sr))
+                e.save_session()
+                with LIB.lock:
+                    pasta["session_file"] = str(sp)
+                    pasta["session_name"] = name
+                with self.state.lock:
+                    self.state.session_audio_n = session_audio_count(sp)
+                    self.state.sel_seconds = 0.0
+                    self.state.sel_at = time.monotonic()
+                    self.state.ptsl_playing = False
+            LIB.save()
+            n = len(missing)
+            return {"ok": True, "session": name, "msg": ("pasta pronta no Pro Tools (%d música%s colocada%s)" % (n, "s" if n != 1 else "", "s" if n != 1 else "")) if n else "pasta já estava no Pro Tools"}
+        finally:
+            pasta["progresso"] = None
 
     def ensure_session(self, song):
         """Garante que a musica esteja carregada no Pro Tools ANTES de tocar:
@@ -1592,13 +1793,20 @@ def install_update():
 # Estado publico para as telas
 # ----------------------------------------------------------------------------
 def current_view(state):
-    sid = state.forced_song or state.session_song or LIB.find_by_session(state.session)
-    song = LIB.get(sid) if sid else None
     secs = state.seconds_now()
+    pasta = LIB.pastas.get(state.session_pasta) if state.session_pasta else None
+    if state.forced_song:
+        sid = state.forced_song
+    elif pasta:
+        sid = pasta_song_at(pasta, secs)
+    else:
+        sid = state.session_song or LIB.find_by_session(state.session)
+    song = LIB.get(sid) if sid else None
     line_idx = None
     song_secs = None
     if song:
-        song_secs = secs - float(song.get("offset") or 0)
+        lay = (pasta.get("layout") or {}).get(sid) if pasta else None
+        song_secs = secs - (float(lay["offset"]) if lay else float(song.get("offset") or 0))
         lines = song.get("lines") or []
         if state.manual_line is not None:
             line_idx = max(0, min(state.manual_line, len(lines) - 1)) if lines else None
@@ -1624,6 +1832,9 @@ def current_view(state):
         "progresso": song.get("progresso") if song else None,
         "session_audio_n": state.session_audio_n,
         "session_song": state.session_song,
+        "pasta_id": state.session_pasta, "pasta": pasta["name"] if pasta else None,
+        "loaded": [s for s in (pasta.get("songs") or []) if s in (pasta.get("layout") or {})] if pasta else ([state.session_song] if state.session_song else []),
+        "pasta_progresso": next(({"pasta": p["name"], "msg": p["progresso"]["msg"]} for p in LIB.pastas.values() if p.get("progresso")), None),
         "update": UPDATE["latest"] if update_available() else None,
     }
 
@@ -1804,7 +2015,62 @@ def run_web(state, transcriber, ptlink):
         return resp
 
     async def api_songs(req):
-        return web.json_response({"songs": LIB.public(), "config": CFG})
+        return web.json_response({"songs": LIB.public(), "pastas": LIB.pastas, "config": CFG})
+
+    async def api_pasta(req):
+        """Pastas (setlists): create / rename / delete / add / remove / move / load."""
+        body = await req.json()
+        act = body.get("action")
+        pid = body.get("pasta_id")
+        with LIB.lock:
+            p = LIB.pastas.get(pid) if pid else None
+            if act == "create":
+                name = (body.get("name") or "").strip() or "Nova pasta"
+                pid = norm(name).replace(" ", "-") or "pasta"
+                k, i = pid, 2
+                while k in LIB.pastas:
+                    k = "%s-%d" % (pid, i)
+                    i += 1
+                pid = k
+                LIB.pastas[pid] = {"name": name, "songs": [], "layout": {}, "session_file": None, "session_name": None, "progresso": None}
+                p = LIB.pastas[pid]
+            elif p is None:
+                raise web.HTTPNotFound()
+            elif act == "rename":
+                p["name"] = (body.get("name") or "").strip() or p["name"]
+            elif act == "delete":
+                del LIB.pastas[pid]
+                if state.session_pasta == pid:
+                    state.session_pasta = None
+            elif act == "add":
+                sid = body.get("song_id")
+                if sid in LIB.songs and sid not in p["songs"]:
+                    p["songs"].append(sid)
+            elif act == "remove":
+                sid = body.get("song_id")
+                if sid in p["songs"]:
+                    p["songs"].remove(sid)
+            elif act == "move":
+                sid = body.get("song_id")
+                d = int(body.get("dir") or 0)
+                if sid in p["songs"]:
+                    i = p["songs"].index(sid)
+                    j = max(0, min(len(p["songs"]) - 1, i + d))
+                    p["songs"].insert(j, p["songs"].pop(i))
+        LIB.save()
+        if act in ("add", "load") and p is not None and pid in LIB.pastas and state.ptsl_ok and not p.get("progresso"):
+            # "load" = botao "Carregar no Pro Tools"; "add" com a sessao da pasta ja aberta = entra na hora, sem clique
+            if act == "load" or ptlink.pasta_session_open(p):
+                def job():
+                    try:
+                        r = ptlink.load_pasta(p)
+                        log("pasta", p["name"], ":", r.get("msg"))
+                    except Exception as e:
+                        log("erro carregando a pasta", p["name"], ":", str(e)[:200])
+                        p["progresso"] = None
+                        p["erro"] = str(e)[:200]
+                threading.Thread(target=job, daemon=True).start()
+        return web.json_response({"ok": True, "pasta_id": pid, "pastas": LIB.pastas})
 
     async def api_song_get(req):
         s = LIB.get(req.match_info["sid"])
@@ -1983,25 +2249,54 @@ def run_web(state, transcriber, ptlink):
         act = body.get("action")
         if not state.ptsl_ok:
             return web.json_response({"ok": False, "erro": "Pro Tools não conectado (PTSL)"}, status=409)
-        off = 0.0
-        if body.get("song_id"):
-            s = LIB.get(body["song_id"])
-            off = float(s.get("offset") or 0) if s else 0.0
-        sec = None if body.get("seconds") is None else float(body["seconds"]) + off
+        sid = body.get("song_id") or (state.forced_song if act in ("play", "toggle") else None)
+        s = LIB.get(sid) if sid else None
+        # Em que pasta (setlist) esta musica vai tocar: a que o estudio indicou, a que esta aberta no Pro Tools,
+        # ou a unica que a contem. Fora de pasta, a musica toca na propria sessao.
+        pid = None
+        if s:
+            hint = body.get("pasta")
+            pids = LIB.pastas_with(sid)
+            if hint in pids:
+                pid = hint
+            elif state.session_pasta in pids:
+                pid = state.session_pasta
+            elif len(pids) == 1:
+                pid = pids[0]
+        pasta = LIB.pastas.get(pid) if pid else None
+
+        def offset_of():
+            if pasta and sid in (pasta.get("layout") or {}):
+                return float(pasta["layout"][sid]["offset"])
+            return float(s.get("offset") or 0) if s and not pasta else 0.0
         try:
-            # Antes de tocar, a musica pedida tem de ser a que esta na sessao aberta. Se for outra (ou nenhuma),
-            # o Pro Tools e preparado: abre/cria a sessao dela. Estudio manda song_id+ensure; teleprompter (toggle
-            # sem song_id) vale para a musica forcada com "Mostrar no teleprompter".
-            target = LIB.get(body["song_id"]) if body.get("song_id") else (LIB.get(state.forced_song) if state.forced_song else None)
-            if act in ("play", "toggle") and target and (body.get("ensure") or not body.get("song_id")) and not state.playing():
-                if not await asyncio.to_thread(ptlink.song_loaded, target):
-                    log("play de", target["name"], "com a sessao", state.session, "-> preparando o Pro Tools")
-                    r = await asyncio.to_thread(ptlink.ensure_session, target)   # deixa o Pro Tools com esta musica
+            # Antes de tocar, a musica pedida tem de estar na sessao aberta. Se nao esta, o Pro Tools e preparado:
+            # pasta -> abre a sessao da pasta com todas as musicas na linha do tempo; avulsa -> abre/cria a sessao dela.
+            # Estudio manda song_id+ensure; teleprompter (toggle sem song_id) vale para a musica forcada.
+            if act in ("play", "toggle") and s and (body.get("ensure") or not body.get("song_id")) and not state.playing():
+                if pasta:
+                    ok = ptlink.pasta_loaded(pasta, sid)
+                else:
+                    ok = await asyncio.to_thread(ptlink.song_loaded, s)
+                if not ok:
+                    log("play de", s["name"], "na pasta" if pasta else "com a sessao", pasta["name"] if pasta else state.session, "-> preparando o Pro Tools")
+                    if pasta and pasta.get("progresso"):
+                        return web.json_response({"ok": False, "erro": "a pasta ainda está sendo carregada no Pro Tools"}, status=409)
+                    r = await asyncio.to_thread(ptlink.load_pasta if pasta else ptlink.ensure_session, pasta or s)
                     if not r.get("ok"):
                         return web.json_response({"ok": False, "erro": r.get("msg", "não consegui preparar o Pro Tools")}, status=500)
+                    if pasta and sid not in (pasta.get("layout") or {}):
+                        return web.json_response({"ok": False, "erro": "a música não tem arquivo de áudio para colocar na pasta"}, status=500)
                     await asyncio.sleep(0.8)
                     if act == "toggle":
                         act = "play"
+            sec = None if body.get("seconds") is None else float(body["seconds"]) + offset_of()
+            if act in ("play", "toggle") and sec is None and pasta and sid in (pasta.get("layout") or {}):
+                # play numa musica da pasta sem posicao: comeca do inicio DELA, nao de onde o cursor parou
+                cur = pasta_song_at(pasta, state.seconds_now())
+                if cur != sid:
+                    sec = offset_of()
+                    act = "play"
             if act == "play":
                 await asyncio.to_thread(ptlink.play, sec)
             elif act == "stop":
@@ -2125,6 +2420,7 @@ def run_web(state, transcriber, ptlink):
     app.router.add_post("/api/control", api_control)
     app.router.add_post("/api/transport", api_transport)
     app.router.add_post("/api/protools/session", api_pt_session)
+    app.router.add_post("/api/pasta", api_pasta)
     app.router.add_get("/api/setup", api_setup)
     app.router.add_post("/api/setup", api_setup_post)
     app.router.add_static("/static", STATIC)
@@ -2175,6 +2471,8 @@ def main():
         i = sys.argv.index("--demucs")
         demucs_worker(sys.argv[i + 1:])
         return
+    if "--porta" in sys.argv:   # instancia de teste ao lado da instalada
+        CFG["porta"] = int(sys.argv[sys.argv.index("--porta") + 1])
     url = "http://localhost:%d" % CFG["porta"]
     if port_open(int(CFG["porta"])):
         # ja tem um Prompter rodando: so abre a tela (e o Pro Tools, se pedido)
@@ -2194,7 +2492,7 @@ def main():
         mido.get_input_names()   # carrega o backend MIDI na thread principal (evita corrida de import entre threads)
     except Exception as e:
         log("MIDI indisponivel:", e)
-    scan_folder()
+    scan_folder(purge=True)
     tr = Transcriber(state)
     link = PTLink(state)
     MTCReader(state).start()

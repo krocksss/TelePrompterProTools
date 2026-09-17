@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.7"
+VERSION = "2.0.8"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -720,8 +720,8 @@ class Transcriber(threading.Thread):
         self.set_prog(sid, "ouvindo a letra", 0)
         # vad_filter desligado: o detector de fala descarta voz CANTADA
         segments, info = model.transcribe(src, language=CFG["idioma"] or None, vad_filter=False,
-                                          word_timestamps=True, beam_size=5, condition_on_previous_text=False,
-                                          initial_prompt="Letra da música, um verso por linha." if (CFG["idioma"] or "pt") == "pt" else None)
+                                          word_timestamps=True, beam_size=5, condition_on_previous_text=False)
+        # sem initial_prompt: o modelo copiava o texto do prompt como "primeira frase" e engolia os versos iniciais
         dur = float(getattr(info, "duration", 0) or audio_duration(src) or 1)
         lines = []
         all_words = []

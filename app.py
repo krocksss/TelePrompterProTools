@@ -117,7 +117,8 @@ def clean_env():
              if x and x.lower().rstrip("\\/") not in (base, exe_dir) and not x.lower().startswith(base + os.sep)]
     env["PATH"] = os.pathsep.join(parts)
     for k in list(env):
-        if k.startswith("_MEIPASS") or k.startswith("_PYI_") or k in ("PYINSTALLER_RESET_ENVIRONMENT",):
+        if k.startswith("_MEIPASS") or k.startswith("_PYI_") or k.startswith("DYLD_") or k.startswith("LD_LIBRARY") \
+                or k in ("PYINSTALLER_RESET_ENVIRONMENT", "PYTHONHOME", "PYTHONPATH"):
             env.pop(k, None)
     return env
 

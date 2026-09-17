@@ -45,8 +45,17 @@ jobs:
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          if [ "${{ matrix.os }}" = "macos-15-intel" ]; then pip install "numpy<2"; fi   # torch 2.2 (ultimo p/ Intel) nao roda com numpy 2
+          if [ "${{ matrix.os }}" = "macos-15-intel" ]; then
+            # Intel: torch para em 2.2 (precisa numpy<2) e o sphn (dep. do demucs) nao compila -> stub, o Prompter passa tensores
+            grep -v '^demucs' requirements.txt > /tmp/req.txt
+            pip install -r /tmp/req.txt "numpy<2" "torch>=2.2,<2.3"
+            pip install --no-deps demucs && pip install einops julius lameenc pyyaml safetensors tqdm
+            python -c "import site,os;open(os.path.join(site.getsitepackages()[0],'sphn.py'),'w').write('def read(*a, **k):
+    raise RuntimeError(\"sphn indisponivel no macOS Intel\")
+')"
+          else
+            pip install -r requirements.txt
+          fi
           pip install pyinstaller pyobjc-framework-Cocoa
       - name: Ícone .icns
         run: |

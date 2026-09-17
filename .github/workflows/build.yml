@@ -32,6 +32,7 @@ jobs:
 
   mac:
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}

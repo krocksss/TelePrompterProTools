@@ -182,7 +182,7 @@ function fmt(t) { t = Math.max(0, t||0); const m = Math.floor(t/60), s = Math.fl
 function parseT(v) { v = String(v).trim(); const m = v.match(/^(\d+):(\d+(?:[.,]\d+)?)$/); if (m) return +m[1]*60 + parseFloat(m[2].replace(',','.')); const f = parseFloat(v.replace(',','.')); return isNaN(f) ? 0 : f; }
 function norm(s) { return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
 function isPT() { return ptMode && view && view.ptsl; }
-function sessionMatches() { if (!song || !view || !view.session) return false; return view.song_id === sel || norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
+function sessionMatches() { if (!song || !view || !view.session) return false; if (view.session_song) return view.session_song === sel; if (!((view.session_audio_n || 0) > 0)) return false; return norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
 
 async function loadSongs() {
   const r = await fetch('/api/songs'); const j = await r.json();
@@ -213,7 +213,7 @@ function renderEmpty() {
     <div id="bigDrop" onclick="$('fileIn').click()"><div class="big">Arraste o MP3 ou WAV para cá</div><div class="sm">ou clique para procurar no computador</div></div>
     <div class="steps">
       <div><b>1. Solte a música</b><span>Ela entra na lista e começa a ser transcrita. Na primeira vez o modelo é baixado (1,6 GB).</span></div>
-      <div><b>2. Pro Tools pronto sozinho</b><span>Sem sessão aberta, o Prompter cria a sessão com a música. Sessão vazia, ele coloca a música nela. Sua sessão do show, ele só sincroniza.</span></div>
+      <div><b>2. Pro Tools pronto sozinho</b><span>Sem sessão aberta, o Prompter cria a sessão com a música. Sessão vazia, ele coloca a música nela. Cada música fica na própria sessão: ao trocar de música e dar play, o Pro Tools abre a sessão dela.</span></div>
       <div><b>3. Aperte play</b><span>Aqui ou no Pro Tools: os dois andam juntos e o teleprompter acompanha.</span></div>
     </div></div>`;
 }

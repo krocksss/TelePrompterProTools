@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.16"
+VERSION = "2.0.17"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -250,6 +250,13 @@ class Library:
                     return sid
         return None
 
+    def sid_of(self, song):
+        with self.lock:
+            for sid, s in self.songs.items():
+                if s is song:
+                    return sid
+        return None
+
     def public(self):
         with self.lock:
             return {sid: dict({k: v for k, v in s.items() if k not in ("words", "lines")},
@@ -350,6 +357,22 @@ def scan_folder():
             found[info["name"]] = info
             dirnames[:] = []
     return register(found)
+
+
+def song_stem(song):
+    """Radical do WAV que o Prompter gera para esta musica (e o nome que o arquivo ganha em 'Audio Files')."""
+    for c in [song.get("source")] + list(song.get("originals") or []) + list(song.get("candidates") or []):
+        if c and os.path.exists(c):
+            return norm(Path(c).stem).replace(" ", "_")
+    return None
+
+
+def audio_is_song(filename, stem):
+    """'<stem>.wav', '<stem>_48k.wav' (taxa da sessao), '<stem>-01.wav' (copia do Pro Tools) sao desta musica;
+    '<stem>_cheia.wav' NAO ('de_cara' vs 'de_cara_cheia')."""
+    if not stem:
+        return False
+    return re.match(re.escape(stem.lower()) + r"(_\d+k)?(-\d+)?\.[a-z0-9]+$", filename.lower()) is not None
 
 
 def session_audio_count(ptx_path):
@@ -899,6 +922,7 @@ class State:
         self.sel_at = 0.0
         self.session_path = None
         self.session_audio_n = None   # quantos arquivos de audio a sessao aberta tem (None = desconhecido)
+        self.session_song = None      # id da musica cujo audio esta na sessao aberta (None = nenhuma da biblioteca)
         # geral
         self.session = None
         self.pt_found = False
@@ -1102,18 +1126,24 @@ class PTLink(threading.Thread):
                                 st.session = name
                                 st.manual_line = None
                                 st.session_path = None
+                                st.session_song = None
                             if st.session_path is None:
                                 p = self.engine.session_path()
                                 st.session_path = p
                                 st.session_audio_n = session_audio_count(p)
                                 if CFG.get("sessao_auto", True) and add_session_folder(p):
                                     LIB.save()
+                                self.resolve_session_song()
+                            elif n % 40 == 0 and not playing:   # ~3 s: o usuario pode ter importado/apagado audio na sessao
+                                st.session_audio_n = session_audio_count(st.session_path)
+                                self.resolve_session_song()
                         except Exception as ex:
                             if "NoOpenedSession" in str(ex):
                                 if st.session is not None:
                                     log("sessao fechada")
                                 st.session = None
                                 st.session_path = None
+                                st.session_song = None
                             else:
                                 raise
                 n += 1
@@ -1122,6 +1152,8 @@ class PTLink(threading.Thread):
                 msg = str(e)
                 if "NoOpenedSession" in msg:
                     self.state.session = None
+                    self.state.session_path = None
+                    self.state.session_song = None
                     self.state.ptsl_playing = False
                     time.sleep(1)
                     continue
@@ -1210,8 +1242,9 @@ class PTLink(threading.Thread):
             sp = e.session_path()
             name = e.session_name()
             af = Path(sp).parent / "Audio Files"
-            if af.exists() and any(f.name.lower().startswith(wav.stem.lower()) for f in af.iterdir()):
+            if af.exists() and any(audio_is_song(f.name, wav.stem) for f in af.iterdir()):
                 self.state.session_audio_n = session_audio_count(sp)
+                self.bind_song(song, name, sp)
                 return {"ok": True, "session": name, "msg": "a música já está na sessão \"%s\"" % name}
             loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
             ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
@@ -1220,25 +1253,88 @@ class PTLink(threading.Thread):
             e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio, audio_data=ad))
             e.save_session()
             self.state.session_audio_n = session_audio_count(sp)
-        with LIB.lock:
-            if norm(name) != norm(song["name"]):
-                song["session_alias"] = name
-        LIB.save()
+            self.bind_song(song, name, sp)
         log("audio importado na sessao aberta:", name, "a", sr, "Hz")
         return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
 
-    def session_matches(self, song):
-        sess = self.state.session
-        if not sess:
+    def bind_song(self, song, session_name, session_path):
+        """Registra que o audio DESTA musica esta na sessao (nome + arquivo .ptx) e que ela e a musica da sessao aberta."""
+        sid = LIB.sid_of(song)
+        with LIB.lock:
+            song["session_alias"] = session_name if norm(session_name) != norm(song["name"]) else None
+            if session_path:
+                song["session_file"] = str(session_path)
+            for osid, s in LIB.songs.items():   # so UMA musica pode ser a dona de uma sessao
+                if osid != sid and s.get("session_alias") and norm(s["session_alias"]) == norm(session_name):
+                    s["session_alias"] = None
+        LIB.save()
+        with self.state.lock:
+            self.state.session_song = sid
+
+    def resolve_session_song(self):
+        """Descobre qual musica da biblioteca esta DE FATO na sessao aberta: pelo arquivo em 'Audio Files'
+        (o WAV que o Prompter copiou) ou, na falta, pelo nome da sessao. Guarda em state.session_song."""
+        st = self.state
+        sp, name = st.session_path, st.session
+        found = None
+        if name and sp:
+            try:
+                af = Path(sp).parent / "Audio Files"
+                files = [f.name for f in af.iterdir()] if af.exists() else []
+            except Exception:
+                files = []
+            if files:
+                with LIB.lock:
+                    for sid, s in LIB.songs.items():
+                        stem = song_stem(s)
+                        if stem and any(audio_is_song(f, stem) for f in files):
+                            found = sid
+                            break
+        if found is None and name:
+            with LIB.lock:
+                for sid, s in LIB.songs.items():
+                    if norm(s["name"]) == norm(name) and (s.get("candidates") or s.get("source")):
+                        found = sid
+                        break
+        if found is not None and name:
+            with LIB.lock:   # aliases velhos de OUTRAS musicas apontando para esta sessao confundem o teleprompter
+                stale = [s for sid, s in LIB.songs.items() if sid != found and s.get("session_alias") and norm(s["session_alias"]) == norm(name)]
+                for s in stale:
+                    s["session_alias"] = None
+            if stale:
+                LIB.save()
+        if found != st.session_song:
+            log("musica da sessao", name, "->", LIB.songs[found]["name"] if found else "nenhuma da biblioteca")
+        st.session_song = found
+        return found
+
+    def song_loaded(self, song):
+        """A sessao aberta no Pro Tools tem o audio DESTA musica? (dar play toca ela)"""
+        st = self.state
+        if not st.session:
             return False
-        return norm(sess) == norm(song["name"]) or (song.get("session_alias") and norm(song["session_alias"]) == norm(sess))
+        if st.session_song is None and st.session_path:
+            self.resolve_session_song()
+        if st.session_song is not None:
+            return st.session_song == LIB.sid_of(song)
+        # Sessao com audio que nao veio do Prompter (a sessao real do show): vale o vinculo que o usuario declarou
+        # ("Vincular a sessao aberta") ou o nome igual. Sem isso o play fecharia a sessao do show para abrir outra.
+        if (st.session_audio_n or 0) > 0:
+            alias = song.get("session_alias")
+            return norm(st.session) == norm(song["name"]) or bool(alias and norm(alias) == norm(st.session))
+        return False
+
+    def session_matches(self, song):
+        return self.song_loaded(song)
 
     def ensure_session(self, song):
         """Garante que a musica esteja carregada no Pro Tools ANTES de tocar:
-        - sessao dela aberta com audio -> nada a fazer
-        - sessao aberta (dela ou vazia) sem audio -> coloca o audio (na taxa da sessao)
-        - outra sessao com audio, ou nenhuma -> cria/abre a sessao da musica (a anterior e salva e fechada)"""
-        if self.session_matches(song):
+        - sessao aberta ja tem o audio dela -> nada a fazer
+        - sessao aberta VAZIA (ou com o nome dela e sem audio) -> coloca o audio (na taxa da sessao)
+        - outra musica na sessao, ou nenhuma sessao -> abre a sessao dela (a anterior e salva e fechada) ou cria"""
+        if self.song_loaded(song):
+            return {"ok": True, "session": self.state.session, "msg": "sessão já pronta"}
+        if self.state.session:
             n = self.state.session_audio_n
             if n is None:
                 try:
@@ -1247,16 +1343,14 @@ class PTLink(threading.Thread):
                     n = None
             if n == 0:
                 return self.import_into_session(song)
-            return {"ok": True, "session": self.state.session, "msg": "sessão já pronta"}
-        if self.state.session and self.state.session_audio_n == 0:
-            return self.import_into_session(song)
         return self.make_session(song)
 
     def auto_prepare(self, song):
         """Musica recem-solta: deixa o Pro Tools pronto sem cliques.
         - sem sessao aberta -> cria a sessao da musica com o audio na faixa 1
         - sessao aberta VAZIA -> coloca o audio nela (na taxa da sessao) e vincula
-        - sessao aberta com audio (a sessao real do show) -> so vincula, nao mexe"""
+        - sessao aberta ja com ESTA musica -> so confirma o vinculo
+        - sessao aberta com OUTRA musica -> nao mexe agora; o play desta musica abre a sessao dela"""
         if not self.state.ptsl_ok or not CFG.get("preparar_protools", True):
             return
         try:
@@ -1268,8 +1362,11 @@ class PTLink(threading.Thread):
             elif n_audio == 0:
                 log("preparando o Pro Tools: sessao", sess, "vazia, colocando o audio")
                 self.import_into_session(song)
+            elif self.song_loaded(song):
+                log("sessao", sess, "ja tem o audio de", song["name"])
+                self.bind_song(song, sess, self.state.session_path)
             else:
-                log("sessao", sess, "ja tem audio: so vinculando", song["name"])
+                log("sessao", sess, "tem outra musica: o play de", song["name"], "vai abrir a sessao dela")
         except Exception as e:
             log("nao consegui preparar o Pro Tools sozinho:", str(e)[:200])
 
@@ -1294,6 +1391,10 @@ class PTLink(threading.Thread):
         base = Path(CFG["pasta_musicas"]) / "Sessoes"
         base.mkdir(parents=True, exist_ok=True)
         ptx = base / name / (name + ".ptx")
+        prev = song.get("session_file")   # sessao onde o audio dela ja foi colocado antes (ex.: uma "Untitled" que estava aberta)
+        if prev and os.path.exists(prev) and Path(prev).suffix.lower() in (".ptx", ".ptf"):
+            ptx = Path(prev)
+            name = ptx.stem
         with self.lock:
             e = self.engine
             try:
@@ -1301,6 +1402,12 @@ class PTLink(threading.Thread):
             except Exception:
                 cur = None
             if cur and norm(cur) == norm(name):
+                sp = e.session_path()
+                self.state.session_path = sp
+                self.state.session_audio_n = session_audio_count(sp)
+                if (self.state.session_audio_n or 0) == 0:
+                    return self.import_into_session(song)
+                self.bind_song(song, cur, sp)
                 return {"ok": True, "session": cur, "msg": "a sessão já está aberta no Pro Tools"}
             if cur:
                 log("fechando a sessao", cur, "para abrir", name)
@@ -1310,6 +1417,7 @@ class PTLink(threading.Thread):
                 e.open_session(str(ptx))
                 log("sessao aberta no Pro Tools:", ptx)
                 msg = "sessão aberta no Pro Tools"
+                sp = str(ptx)
             else:
                 b = e.create_session(name, str(base))
                 b.wave_format()
@@ -1328,12 +1436,12 @@ class PTLink(threading.Thread):
                 msg = "sessão criada no Pro Tools com a música na faixa 1"
             with self.state.lock:
                 self.state.session = name
-                self.state.session_path = None
+                self.state.session_path = sp
+                self.state.session_audio_n = session_audio_count(sp)
                 self.state.sel_seconds = 0.0
                 self.state.sel_at = time.monotonic()
-        with LIB.lock:
-            song["session_alias"] = name if norm(name) != norm(song["name"]) else None
-        LIB.save()
+                self.state.ptsl_playing = False
+            self.bind_song(song, name, sp)
         return {"ok": True, "session": name, "msg": msg}
 
 
@@ -1484,7 +1592,7 @@ def install_update():
 # Estado publico para as telas
 # ----------------------------------------------------------------------------
 def current_view(state):
-    sid = state.forced_song or LIB.find_by_session(state.session)
+    sid = state.forced_song or state.session_song or LIB.find_by_session(state.session)
     song = LIB.get(sid) if sid else None
     secs = state.seconds_now()
     line_idx = None
@@ -1515,6 +1623,7 @@ def current_view(state):
         "lead_words": float(CFG.get("avanco_palavras", 0.25)),
         "progresso": song.get("progresso") if song else None,
         "session_audio_n": state.session_audio_n,
+        "session_song": state.session_song,
         "update": UPDATE["latest"] if update_available() else None,
     }
 
@@ -1826,9 +1935,9 @@ def run_web(state, transcriber, ptlink):
                     s["status"] = "pendente"
                     s["erro"] = None
                     s["fonte_forcada"] = str(dst)
-                    alias = link if link is not None else state.session
-                    if alias and norm(alias) != norm(stem) and norm(alias) not in ("untitled", "sem titulo", "new session"):
-                        s["session_alias"] = alias
+                    # O vinculo com a sessao aberta NAO e feito aqui: so quando o audio dela e de fato colocado na
+                    # sessao (auto_prepare/ensure_session). Vincular toda musica solta a mesma sessao fazia o play
+                    # da 2a musica tocar a 1a (a sessao "ja estava pronta").
             sids.append(sid)
             log("musica recebida no estudio:", fname if False else dst.name, "-> sessao", link or state.session)
         LIB.save()
@@ -1880,13 +1989,19 @@ def run_web(state, transcriber, ptlink):
             off = float(s.get("offset") or 0) if s else 0.0
         sec = None if body.get("seconds") is None else float(body["seconds"]) + off
         try:
-            if act == "play" and body.get("ensure") and body.get("song_id"):
-                s = LIB.get(body["song_id"])
-                if s and not (ptlink.session_matches(s) and (state.session_audio_n or 0) > 0):
-                    r = await asyncio.to_thread(ptlink.ensure_session, s)   # deixa o Pro Tools com esta musica
+            # Antes de tocar, a musica pedida tem de ser a que esta na sessao aberta. Se for outra (ou nenhuma),
+            # o Pro Tools e preparado: abre/cria a sessao dela. Estudio manda song_id+ensure; teleprompter (toggle
+            # sem song_id) vale para a musica forcada com "Mostrar no teleprompter".
+            target = LIB.get(body["song_id"]) if body.get("song_id") else (LIB.get(state.forced_song) if state.forced_song else None)
+            if act in ("play", "toggle") and target and (body.get("ensure") or not body.get("song_id")) and not state.playing():
+                if not await asyncio.to_thread(ptlink.song_loaded, target):
+                    log("play de", target["name"], "com a sessao", state.session, "-> preparando o Pro Tools")
+                    r = await asyncio.to_thread(ptlink.ensure_session, target)   # deixa o Pro Tools com esta musica
                     if not r.get("ok"):
                         return web.json_response({"ok": False, "erro": r.get("msg", "não consegui preparar o Pro Tools")}, status=500)
-                    time.sleep(0.5)
+                    await asyncio.sleep(0.8)
+                    if act == "toggle":
+                        act = "play"
             if act == "play":
                 await asyncio.to_thread(ptlink.play, sec)
             elif act == "stop":

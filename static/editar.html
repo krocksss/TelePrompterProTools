@@ -284,6 +284,10 @@ function renderGuide() {
     cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Crie a sessão desta música no Pro Tools';
     txt = view.session ? `Aberta agora: "${esc(view.session)}". Vincule esta música a ela ou crie a sessão própria.` : 'Um clique: a sessão nasce com a música na faixa 1. Se já existir, ela é aberta.';
     act = (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>';
+  } else if (view.session_audio_n === 0) {
+    cls = ''; n = '2'; h = 'A sessão "' + esc(view.session) + '" está sem áudio';
+    txt = 'Sincroniza, mas o Pro Tools toca silêncio. Coloque a música na faixa 1 desta sessão com um clique.';
+    act = '<button class="primary" onclick="importIntoSession()">Colocar a música nesta sessão</button>';
   } else {
     cls = 'ok'; n = '✓'; h = 'Pronta e sincronizada com "' + esc(view.session) + '"';
     txt = 'Aperte play aqui ou no Pro Tools. O teleprompter acompanha palavra por palavra.';
@@ -299,6 +303,13 @@ async function makeSession() {
   const j = await r.json();
   if (!j.ok) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para preparar a sessão</h3><p>' + esc(j.msg || '') + '</p></div><div><button onclick="makeSession()">Tentar de novo</button></div>'; return; }
   setTimeout(async () => { await loadSong(); }, 2500);
+}
+async function importIntoSession() {
+  const g = $('guide'); g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Colocando a música na sessão</h3><p>Convertendo o áudio e importando na faixa 1.</p><div class="bar indet"><i></i></div></div><div></div>';
+  const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel, into_open: true})});
+  const j = await r.json();
+  if (!j.ok) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para importar</h3><p>' + esc(j.msg || '') + '</p></div><div><button onclick="importIntoSession()">Tentar de novo</button></div>'; return; }
+  setTimeout(async () => { await loadSong(); }, 2000);
 }
 async function linkTo(sess) { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_alias: sess})}); await loadSong(); }
 
@@ -490,7 +501,7 @@ function connect() {
     if (sel && v.song_id === sel && v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
     else if (sel && v.seconds != null && song) { base = v.seconds - (song.offset || 0); baseAt = performance.now(); }
     playing = !!v.playing;
-    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id) { renderTransport(); renderGuide(); }
+    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id || prev.session_audio_n !== v.session_audio_n) { renderTransport(); renderGuide(); }
     if (sel && v.song_id === sel && v.progresso && songs[sel]) { songs[sel].progresso = v.progresso; renderGuide(); }
     if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') loadSong();
     if (prev && prev.song_id !== v.song_id) loadSongs();

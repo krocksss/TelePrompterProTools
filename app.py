@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.6"
+VERSION = "2.0.7"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -330,6 +330,15 @@ def scan_folder():
             found[info["name"]] = info
             dirnames[:] = []
     return register(found)
+
+
+def session_audio_count(ptx_path):
+    """Quantos arquivos de audio existem em 'Audio Files' da sessao (0 = sessao muda)."""
+    try:
+        af = Path(ptx_path).parent / "Audio Files"
+        return sum(1 for f in af.iterdir() if f.suffix.lower() in AUDIO_EXT) if af.exists() else 0
+    except Exception:
+        return None
 
 
 def add_session_folder(path):
@@ -838,6 +847,7 @@ class State:
         self.sel_seconds = 0.0
         self.sel_at = 0.0
         self.session_path = None
+        self.session_audio_n = None   # quantos arquivos de audio a sessao aberta tem (None = desconhecido)
         # geral
         self.session = None
         self.pt_found = False
@@ -1004,8 +1014,12 @@ class PTLink(threading.Thread):
                 st = self.state
                 with self.lock:
                     ts = self.engine.transport_state()
-                    playing = ts in ("TS_TransportPlaying", "TS_TransportRecording", "TS_TransportPlayingHalfSpeed",
-                                     "TS_TransportRecordingHalfSpeed")
+                    if ts in ("TS_TransportIsCueing", "TS_TransportIsCued", "TS_TransportPrimed", "TS_TransportIsStopping",
+                              "TS_TransportScrub", "TS_TransportShuttle"):
+                        playing = st.ptsl_playing   # transicao: mantem o estado anterior
+                    else:
+                        playing = ts in ("TS_TransportPlaying", "TS_TransportRecording", "TS_TransportPlayingHalfSpeed",
+                                         "TS_TransportRecordingHalfSpeed")
                     now = time.monotonic()
                     if playing and not st.ptsl_playing:
                         with st.lock:   # play iniciado no Pro Tools: comecou entre a leitura anterior e esta
@@ -1037,10 +1051,11 @@ class PTLink(threading.Thread):
                                 st.session = name
                                 st.manual_line = None
                                 st.session_path = None
-                            if CFG.get("sessao_auto", True) and st.session_path is None:
+                            if st.session_path is None:
                                 p = self.engine.session_path()
                                 st.session_path = p
-                                if add_session_folder(p):
+                                st.session_audio_n = session_audio_count(p)
+                                if CFG.get("sessao_auto", True) and add_session_folder(p):
                                     LIB.save()
                         except Exception as ex:
                             if "NoOpenedSession" in str(ex):
@@ -1108,6 +1123,45 @@ class PTLink(threading.Thread):
             self.stop()
         else:
             self.play()
+
+    def song_wav(self, song):
+        src = None
+        for c in [song.get("source")] + list(song.get("originals") or []) + list(song.get("candidates") or []):
+            if c and os.path.exists(c):
+                src = c
+                break
+        if not src:
+            return None
+        wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ".wav")
+        if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(src):
+            wav.parent.mkdir(exist_ok=True)
+            to_wav(src, wav)
+        return wav
+
+    def import_into_session(self, song):
+        """Coloca o audio da musica na sessao ABERTA do Pro Tools: faixa nova, no 0:00 (convertido para WAV)."""
+        import ptsl.PTSL_pb2 as pt
+        from ptsl import ops
+        wav = self.song_wav(song)
+        if wav is None:
+            return {"ok": False, "msg": "a música não tem arquivo de áudio"}
+        with self.lock:
+            e = self.engine
+            sp = e.session_path()
+            name = e.session_name()
+            loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
+            ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
+                              destination_path=str(Path(sp).parent / "Audio Files"),
+                              audio_destination=pt.MDestination_NewTrack, audio_location=pt.MLocation_SessionStart, location_data=loc)
+            e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio, audio_data=ad))
+            e.save_session()
+            self.state.session_audio_n = session_audio_count(sp)
+        with LIB.lock:
+            if norm(name) != norm(song["name"]):
+                song["session_alias"] = name
+        LIB.save()
+        log("audio importado na sessao aberta:", name)
+        return {"ok": True, "session": name, "msg": "música colocada na faixa 1 da sessão \"%s\"" % name}
 
     def make_session(self, song):
         """Cria (ou abre) a sessao do Pro Tools com o nome da musica e importa o audio no 0:00, numa faixa nova.
@@ -1334,6 +1388,7 @@ def current_view(state):
         "n_lines": len(song.get("lines") or []) if song else 0,
         "lead": float(CFG["avanco_segundos"]),
         "progresso": song.get("progresso") if song else None,
+        "session_audio_n": state.session_audio_n,
         "update": UPDATE["latest"] if update_available() else None,
     }
 
@@ -1345,14 +1400,20 @@ LOOPMIDI_EXE = (Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86
 SETUP = {"loopmidi_job": None, "loopmidi_msg": None}
 
 
+_LOOP_CACHE = {"at": 0.0, "v": False}
+
+
 def loopmidi_running():
     if not WIN:
         return False
+    if time.time() - _LOOP_CACHE["at"] < 5:
+        return _LOOP_CACHE["v"]
     try:
         out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq loopMIDI.exe"], capture_output=True, creationflags=NOWIN).stdout
-        return b"loopMIDI.exe" in out
+        _LOOP_CACHE.update(at=time.time(), v=b"loopMIDI.exe" in out)
     except Exception:
-        return False
+        _LOOP_CACHE.update(at=time.time(), v=False)
+    return _LOOP_CACHE["v"]
 
 
 def loopmidi_ensure_port():
@@ -1755,14 +1816,17 @@ def run_web(state, transcriber, ptlink):
         if not state.ptsl_ok:
             return web.json_response({"ok": False, "msg": "Pro Tools não conectado"}, status=409)
         try:
-            r = await asyncio.to_thread(ptlink.make_session, s)
+            if body.get("into_open"):
+                r = await asyncio.to_thread(ptlink.import_into_session, s)
+            else:
+                r = await asyncio.to_thread(ptlink.make_session, s)
         except Exception as e:
-            log("erro criando sessao:", e)
+            log("erro na sessao:", e)
             return web.json_response({"ok": False, "msg": str(e)[:200]}, status=500)
         return web.json_response(r)
 
     async def api_setup(req):
-        return web.json_response(setup_status(state, transcriber, ptlink))
+        return web.json_response(await asyncio.to_thread(setup_status, state, transcriber, ptlink))
 
     async def api_setup_post(req):
         body = await req.json()
@@ -1791,7 +1855,7 @@ def run_web(state, transcriber, ptlink):
             await asyncio.to_thread(check_update)
         elif act == "install_update":
             threading.Thread(target=install_update, daemon=True).start()
-        return web.json_response(setup_status(state, transcriber, ptlink))
+        return web.json_response(await asyncio.to_thread(setup_status, state, transcriber, ptlink))
 
     app = web.Application(client_max_size=2 * 1024 * 1024 * 1024)
     app.router.add_get("/", page("index.html"))

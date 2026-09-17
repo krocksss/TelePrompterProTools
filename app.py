@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.12"
+VERSION = "2.0.13"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -1400,10 +1400,18 @@ def install_update():
                     UPDATE["msg"] = "baixando a versão %s: %d%% de %d MB" % (UPDATE["latest"], UPDATE["pct"], total // 1048576)
             urllib.request.urlretrieve(UPDATE["asset"], dst, reporthook=hook)
             UPDATE["pct"] = 100
-            UPDATE["msg"] = "instalando: confirme o pedido de administrador do Windows; o Prompter reabre sozinho"
-            subprocess.Popen([str(dst), "/SILENT", "/NORESTART"], creationflags=NOWIN, env=clean_env(), close_fds=True)
-            time.sleep(1)
-            os._exit(0)
+            UPDATE["msg"] = "instalando: confirme o pedido de administrador do Windows; o Prompter fecha e reabre sozinho"
+            # NAO encerra o app aqui: o instalador fecha o Prompter quando o Windows autorizar.
+            # Se o pedido de administrador for negado, o app continua rodando.
+            p = subprocess.Popen([str(dst), "/SILENT", "/NORESTART"], creationflags=NOWIN, env=clean_env(), close_fds=True)
+            for _ in range(600):   # ate 10 min: se o instalador terminar sem nos fechar, e porque nao instalou
+                time.sleep(1)
+                if p.poll() is not None:
+                    break
+            if p.returncode not in (None, 0):
+                UPDATE["msg"] = "a instalação não aconteceu (código %s). Se você negou a permissão de administrador, clique de novo e aceite." % p.returncode
+            else:
+                UPDATE["msg"] = None
         else:
             open_path(UPDATE["asset"])
     except Exception as e:

@@ -77,20 +77,20 @@ jobs:
           path: out
           merge-multiple: true
       # um asset por passo (sequencial): subir os tres em paralelo dava erro 5xx "Unicorn" no maior
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: out/PrompterSetup-*.exe
-          generate_release_notes: true
-          body: |
-            **Prompter** · teleprompter sincronizado com o Pro Tools — por [Marllon Machado](https://github.com/krocksss)
-
-            - **Windows**: `PrompterSetup-x.y.z.exe` (inclui o loopMIDI). Baixar, executar, Instalar.
-            - **macOS**: `Prompter-x.y.z-mac-arm64.dmg` (Apple Silicon) ou `-x86_64.dmg` (Intel). Arraste para Aplicativos; na 1ª vez botão direito > Abrir.
-      - name: DMGs (gh, com novas tentativas)
+      - name: Release (gh, com novas tentativas por arquivo)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for f in out/Prompter-*.dmg; do
-            for i in 1 2 3 4; do gh release upload "${GITHUB_REF_NAME}" "$f" --clobber --repo "${GITHUB_REPOSITORY}" && break || { echo "tentativa $i falhou: $f"; sleep 30; }; done
+          TAG="${GITHUB_REF_NAME}"
+          NOTES="**Prompter ${TAG#v}** · teleprompter sincronizado com o Pro Tools, por [Marllon Machado](https://github.com/krocksss)
+
+          - **Windows**: PrompterSetup-${TAG#v}.exe (inclui o loopMIDI). Baixar, executar, Instalar.
+          - **macOS**: Prompter-${TAG#v}-mac-arm64.dmg (Apple Silicon) ou -x86_64.dmg (Intel). Arraste para Aplicativos; na 1ª vez botão direito > Abrir.
+
+          Problemas? https://www.instagram.com/marllon_sec/"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --title "Prompter ${TAG#v}" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
+          for f in out/*; do
+            ok=0; for i in 1 2 3 4 5; do gh release upload "$TAG" "$f" --clobber --repo "$GITHUB_REPOSITORY" && { ok=1; break; } || { echo "tentativa $i falhou: $f"; sleep 40; }; done
+            [ "$ok" = 1 ] || echo "FALHOU DE VEZ: $f"
           done
-          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name'
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'

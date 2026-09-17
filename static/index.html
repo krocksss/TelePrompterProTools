@@ -6,64 +6,58 @@
 <link rel="icon" href="/static/prompter.png">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { --bg:#000; --fg:#ffffff; --sung:#e8e8ec; --dark:#3a3a44; --dim:#5a5a62; --dim2:#8a8a94;
-          --ok:#5ee3a0; --warn:#f2c94c; --bad:#ff5c5c; --anchor:42vh; }
-  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg);
-    font-family: "Segoe UI", system-ui, -apple-system, sans-serif; overflow:hidden; }
+  :root { --bg:#0a0b0c; --fg:#f4f5f6; --sung:#e6e8ea; --dark:#3a3f45; --dim:#5c646c; --muted:#8e969e; --accent:#3ecf8e; --warn:#e8b84a; --bad:#e5645f; --anchor:42vh;
+          --font:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif; --r:10px; }
+  html,body { height:100%; margin:0; background:var(--bg); color:var(--fg); font-family:var(--font); overflow:hidden; }
   body { display:flex; flex-direction:column; cursor:none; }
   body.show-cursor { cursor:default; }
-  #top { position:fixed; top:0; left:0; right:0; z-index:3; display:flex; align-items:center; gap:14px; padding:12px 22px;
-    font-size:clamp(13px, 1.4vw, 20px); color:var(--dim2); user-select:none;
-    background:linear-gradient(#000 60%, transparent); }
-  #top .dot { width:.7em; height:.7em; border-radius:50%; background:var(--bad); display:inline-block; }
-  #top .dot.ok { background:var(--ok); } #top .dot.warn { background:var(--warn); }
+  #top { position:fixed; top:0; left:0; right:0; z-index:3; display:flex; align-items:center; gap:14px; padding:14px 22px; font-size:clamp(13px, 1.3vw, 18px); color:var(--muted); user-select:none; background:linear-gradient(var(--bg) 55%, transparent); }
+  #top .led { width:.6em; height:.6em; border-radius:50%; background:var(--dim); display:inline-block; }
+  #top .led.ok { background:var(--accent); box-shadow:0 0 8px rgba(62,207,142,.6); } #top .led.warn { background:var(--warn); }
   #song { color:var(--fg); font-weight:600; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  #tc { font-variant-numeric: tabular-nums; letter-spacing:.04em; }
+  #tc { font-variant-numeric:tabular-nums; letter-spacing:.03em; }
   #viewport { position:absolute; inset:0; overflow:hidden; }
-  #list { position:absolute; left:0; right:0; top:0; padding:0 5vw; will-change:transform;
-    transition: transform .55s cubic-bezier(.22,.8,.3,1); }
+  #list { position:absolute; left:0; right:0; top:0; padding:0 5vw; will-change:transform; transition:transform .55s cubic-bezier(.22,.8,.3,1); }
   #list.jump { transition:none; }
-  .ln { text-align:center; font-weight:600; line-height:1.15; padding:.32em 0; color:var(--dark);
-    font-size:clamp(20px, 3.6vw, 56px); transition: font-size .35s, opacity .35s, color .35s; text-wrap:balance; }
+  .ln { text-align:center; font-weight:600; line-height:1.15; padding:.32em 0; color:var(--dark); font-size:clamp(20px, 3.6vw, 56px); transition:font-size .35s, opacity .35s, color .35s; text-wrap:balance; letter-spacing:-.01em; }
   .ln.cur { font-size:clamp(30px, 6.4vw, 100px); }
-  .ln.past { opacity:.7; }
-  .ln.far { opacity:.6; }
-  .w { display:inline-block; white-space:pre;
-       background-image:linear-gradient(90deg, var(--fg) var(--p,0%), var(--dark) var(--p,0%));
-       -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; }
+  .ln.past { opacity:.7; } .ln.far { opacity:.6; }
+  .w { display:inline-block; white-space:pre; background-image:linear-gradient(90deg, var(--fg) var(--p,0%), var(--dark) var(--p,0%)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; color:transparent; }
   .ln.past .w { background-image:none; -webkit-text-fill-color:var(--sung); color:var(--sung); }
   #fade-top, #fade-bot { position:absolute; left:0; right:0; height:22vh; pointer-events:none; z-index:2; }
-  #fade-top { top:0; background:linear-gradient(#000, transparent); }
-  #fade-bot { bottom:0; background:linear-gradient(transparent, #000); }
-  #msg { position:absolute; inset:0; display:none; align-items:center; justify-content:center; text-align:center;
-    font-size:clamp(22px, 3.4vw, 54px); color:var(--dim2); padding:0 8vw; line-height:1.3; z-index:4; background:#000; }
-  #msg small { display:block; font-size:.5em; color:var(--dim); margin-top:.8em; }
-  #countdown { position:absolute; left:0; right:0; top:calc(var(--anchor) - 9vh); text-align:center; z-index:2;
-    color:var(--dim2); font-size:clamp(16px, 2vw, 28px); letter-spacing:.2em; display:none; }
-  #manual { position:fixed; right:22px; bottom:38px; font-size:14px; color:var(--warn); display:none; z-index:3; }
-  #help { position:fixed; left:22px; bottom:16px; font-size:13px; color:var(--dim); z-index:3; }
+  #fade-top { top:0; background:linear-gradient(var(--bg), transparent); } #fade-bot { bottom:0; background:linear-gradient(transparent, var(--bg)); }
+  #msg { position:absolute; inset:0; display:none; align-items:center; justify-content:center; text-align:center; padding:0 8vw; z-index:4; background:var(--bg); }
+  #msg .t { font-size:clamp(24px, 3.4vw, 54px); font-weight:600; letter-spacing:-.02em; line-height:1.15; }
+  #msg .s { display:block; font-size:clamp(14px, 1.4vw, 22px); color:var(--muted); margin-top:.8em; font-weight:400; }
+  #msg .a { margin-top:1.6em; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+  #msg .a a { display:inline-block; padding:12px 20px; border-radius:var(--r); background:var(--accent); color:#06261a; font-weight:600; text-decoration:none; font-size:clamp(14px, 1.3vw, 20px); }
+  #msg .a a.q { background:#1b1f23; color:var(--fg); border:1px solid #323940; }
+  #countdown { position:absolute; left:0; right:0; top:calc(var(--anchor) - 9vh); text-align:center; z-index:2; color:var(--muted); font-size:clamp(16px, 2vw, 28px); letter-spacing:.2em; display:none; }
+  #manual { position:fixed; right:22px; bottom:44px; font-size:14px; color:var(--warn); display:none; z-index:3; }
+  #help { position:fixed; left:22px; bottom:16px; font-size:13px; color:var(--dim); z-index:3; opacity:0; transition:opacity .3s; }
+  body.show-cursor #help { opacity:1; }
   #bar { position:fixed; right:18px; top:12px; z-index:6; display:flex; gap:8px; opacity:0; transition:opacity .3s; pointer-events:none; }
   body.show-cursor #bar, #bar:hover { opacity:1; pointer-events:auto; }
-  #bar a { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:99px; background:rgba(30,30,36,.92); color:#ececf0;
-    text-decoration:none; font-size:14px; border:1px solid #3a3a44; backdrop-filter:blur(6px); }
-  #bar a:hover { background:#2a4a6a; border-color:#3a6a9a; }
-  #bar a.upd { color:var(--warn); border-color:#6a5a2a; }
+  #bar a { display:inline-flex; align-items:center; padding:8px 14px; border-radius:var(--r); background:rgba(27,31,35,.95); color:var(--fg); text-decoration:none; font-size:14px; border:1px solid #323940; backdrop-filter:blur(6px); transition:background .15s; }
+  #bar a:hover { background:#22272c; }
+  #bar a.pri { background:var(--accent); color:#06261a; border-color:var(--accent); font-weight:600; }
+  #bar a.upd { color:var(--warn); border-color:#5a4a20; }
   #credit { position:fixed; right:22px; bottom:16px; font-size:12px; color:var(--dim); z-index:3; opacity:0; transition:opacity .3s; }
-  body.show-cursor #credit { opacity:1; } #credit a { color:var(--dim2); text-decoration:none; }
+  body.show-cursor #credit { opacity:1; } #credit a { color:var(--muted); text-decoration:none; }
   #credit img { width:18px; height:18px; border-radius:50%; vertical-align:middle; margin-right:5px; }
+  @media (prefers-reduced-motion: reduce) { #list { transition:none; } .ln { transition:none; } }
 </style>
 </head>
 <body>
 <div id="bar">
-  <a id="aUpd" class="upd" href="/config" target="_blank" style="display:none">⬆ atualização</a>
-  <a href="/estudio?adicionar=1" target="_blank" title="escolher um MP3/WAV do computador: transcreve e sincroniza com o Pro Tools">＋ Música</a>
-  <a href="/estudio" target="_blank" title="corrigir a letra, marcar tempos, colar a letra oficial">✎ Editar letra</a>
-  <a id="aTr" href="/estudio?transcrever=1" target="_blank" title="transcrever uma faixa da sessão do Pro Tools">♪ Transcrever faixa</a>
-  <a href="/config" target="_blank" title="configuração e primeiros passos">⚙</a>
+  <a id="aUpd" class="upd" href="/config" target="_blank" style="display:none">Atualização disponível</a>
+  <a class="pri" href="/estudio?adicionar=1" target="_blank" title="escolher um MP3 ou WAV do computador">Adicionar música</a>
+  <a href="/estudio" target="_blank" title="corrigir a letra, marcar tempos, criar a sessão no Pro Tools">Músicas e letras</a>
+  <a href="/config" target="_blank">Configuração</a>
 </div>
 <div id="top">
-  <span class="dot" id="dMidi" title="MIDI"></span><span id="lMidi">MIDI</span>
-  <span class="dot" id="dPt" title="Pro Tools"></span><span id="lPt">Pro Tools</span>
+  <span class="led" id="dPt"></span><span id="lPt">Pro Tools</span>
+  <span class="led" id="dMidi"></span><span id="lMidi">sincronia</span>
   <span id="song"></span>
   <span id="tc">00:00:00:00</span>
 </div>
@@ -74,8 +68,8 @@
   <div id="fade-bot"></div>
 </div>
 <div id="msg"></div>
-<div id="manual">MANUAL (setas) · A = automático</div>
-<div id="help">F = tela cheia · espaço = play/stop no Pro Tools · ← → = linha na mão · A = automático</div>
+<div id="manual">Modo manual (setas). Tecle A para voltar ao automático.</div>
+<div id="help">F tela cheia · espaço play/stop no Pro Tools · setas linha na mão · A automático</div>
 <div id="credit"><a href="https://github.com/krocksss" target="_blank"><img src="/static/autor.png" alt="">Marllon Machado · github.com/krocksss</a></div>
 <script>
 const $ = id => document.getElementById(id);
@@ -89,13 +83,15 @@ async function loadSong(sid) {
   const r = await fetch('/api/song/' + sid); if (!r.ok) return null;
   const s = await r.json(); songCache[sid] = s; return s;
 }
-setInterval(() => { songCache = {}; }, 6000);   // editor pode ter mexido
+setInterval(() => { songCache = {}; }, 6000);
 
-function showMsg(html) { $('msg').style.display = 'flex'; $('msg').innerHTML = '<div>' + html + '</div>'; }
+function showMsg(title, sub, actions) {
+  $('msg').style.display = 'flex';
+  $('msg').innerHTML = '<div><div class="t">' + title + '</div>' + (sub ? '<span class="s">' + sub + '</span>' : '') + (actions ? '<div class="a">' + actions + '</div>' : '') + '</div>';
+}
 function hideMsg() { $('msg').style.display = 'none'; }
 function esc(s) { return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
-// monta a lista de linhas com uma <span> por palavra
 function build(s) {
   const list = $('list'); list.innerHTML = '';
   lineEls = []; wordEls = [];
@@ -112,16 +108,13 @@ function build(s) {
   });
   list.classList.add('jump'); curIdx = -2;
 }
-// linha sem tempo por palavra: reparte o tempo da linha entre as palavras
 function evenWords(ln, next) {
   const toks = ln.text.split(/\s+/).filter(Boolean);
   const a = ln.t, b = Math.max(a + 0.5, ln.end && ln.end > a ? ln.end : (next ? next.t : a + 3));
   const step = (b - a) / Math.max(1, toks.length);
   return toks.map((w, k) => ({ w, s: a + k*step, e: a + (k+1)*step }));
 }
-
 function songTime() { return playing ? base + (performance.now() - baseAt) / 1000 : base; }
-
 function frame() {
   requestAnimationFrame(frame);
   if (!song || !lineEls.length) return;
@@ -131,16 +124,11 @@ function frame() {
   if (manual && manualLine !== null) idx = manualLine;
   else { for (let i = 0; i < L.length; i++) { if (L[i].t <= t + lead) idx = i; else break; } }
   if (idx !== curIdx) {
-    lineEls.forEach((el, i) => {
-      el.className = 'ln ' + (i < idx ? 'past' : i === idx ? 'cur' : (i - idx > 6 ? 'far' : 'next'));
-    });
-    curIdx = idx;
-    scrollTo(idx);
+    lineEls.forEach((el, i) => { el.className = 'ln ' + (i < idx ? 'past' : i === idx ? 'cur' : (i - idx > 6 ? 'far' : 'next')); });
+    curIdx = idx; scrollTo(idx);
   }
-  // clareamento palavra a palavra na linha atual e nas 2 seguintes
   for (let i = Math.max(0, idx); i <= Math.min(L.length - 1, idx + 2); i++) {
-    const wl = wordEls[i];
-    for (const w of wl) {
+    for (const w of wordEls[i]) {
       let p = 0;
       if (manual) p = i === idx ? 100 : 0;
       else if (t >= w.e) p = 100;
@@ -148,85 +136,69 @@ function frame() {
       w.el.style.setProperty('--p', p.toFixed(1) + '%');
     }
   }
-  // pontos de contagem antes da primeira linha
   const cd = $('countdown');
-  if (idx < 0 && L.length && !manual) {
-    const rem = L[0].t - t;
-    cd.style.display = 'block';
-    cd.textContent = rem > 0.5 ? '● '.repeat(Math.min(8, Math.ceil(rem / 2))).trim() : '';
-  } else cd.style.display = 'none';
+  if (idx < 0 && L.length && !manual) { const rem = L[0].t - t; cd.style.display = 'block'; cd.textContent = rem > 0.5 ? '● '.repeat(Math.min(8, Math.ceil(rem / 2))).trim() : ''; }
+  else cd.style.display = 'none';
 }
 requestAnimationFrame(frame);
-
 function scrollTo(idx) {
-  const list = $('list');
-  const anchor = window.innerHeight * 0.42;
-  let y = 0;
-  if (idx >= 0 && lineEls[idx]) {
-    const el = lineEls[idx];
-    y = anchor - (el.offsetTop + el.offsetHeight / 2);
-  } else if (lineEls[0]) {
-    y = anchor - (lineEls[0].offsetTop + lineEls[0].offsetHeight / 2) + window.innerHeight * 0.12;
-  }
+  const list = $('list'); const anchor = window.innerHeight * 0.42; let y = 0;
+  if (idx >= 0 && lineEls[idx]) { const el = lineEls[idx]; y = anchor - (el.offsetTop + el.offsetHeight / 2); }
+  else if (lineEls[0]) { y = anchor - (lineEls[0].offsetTop + lineEls[0].offsetHeight / 2) + window.innerHeight * 0.12; }
   list.style.transform = 'translateY(' + y.toFixed(0) + 'px)';
   if (list.classList.contains('jump')) setTimeout(() => list.classList.remove('jump'), 50);
 }
 window.addEventListener('resize', () => { curIdx = -2; });
 
+const ADD = '<a href="/estudio?adicionar=1" target="_blank">Adicionar música</a>';
+const STUDIO = '<a class="q" href="/estudio" target="_blank">Músicas e letras</a>';
 async function applyView(v) {
   view = v;
-  $('dMidi').className = 'dot ' + (v.source === 'mtc' ? 'ok' : (v.ptsl ? 'ok' : (v.midi ? 'warn' : '')));
-  $('lMidi').textContent = v.source === 'mtc' ? 'MTC' : (v.ptsl ? 'PTSL' : 'MIDI');
-  $('dPt').className = 'dot ' + ((v.protools || v.ptsl) ? (v.session ? 'ok' : 'warn') : '');
-  $('lPt').textContent = v.session ? (v.song && v.song.toLowerCase() === v.session.toLowerCase() ? 'Pro Tools' : v.session) : (v.protools ? 'Pro Tools (sem sessão)' : 'Pro Tools');
+  $('dPt').className = 'led ' + ((v.protools || v.ptsl) ? (v.session ? 'ok' : 'warn') : '');
+  $('lPt').textContent = v.session ? v.session : (v.protools || v.ptsl ? 'Pro Tools sem sessão' : 'Pro Tools fechado');
+  $('dMidi').className = 'led ' + (v.source === 'mtc' ? 'ok' : (v.ptsl ? 'ok' : (v.midi ? 'warn' : '')));
+  $('lMidi').textContent = v.source === 'mtc' ? 'MTC' : (v.ptsl ? 'sincronizado' : 'sem sincronia');
   $('tc').textContent = v.tc + (v.playing ? ' ▶' : ' ■');
   $('manual').style.display = v.manual ? 'block' : 'none';
   $('song').textContent = v.song || '';
-  $('aUpd').style.display = v.update ? '' : 'none'; if (v.update) $('aUpd').textContent = '⬆ versão ' + v.update;
-  $('aTr').href = '/estudio?transcrever=1' + (v.song_id ? '&song=' + encodeURIComponent(v.song_id) : '');
+  $('aUpd').style.display = v.update ? '' : 'none'; if (v.update) $('aUpd').textContent = 'Versão ' + v.update + ' disponível';
   lead = v.lead != null ? v.lead : 0.3; manual = !!v.manual; manualLine = v.manual ? v.line : null;
   playing = !!v.playing;
   if (v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
 
   if (!v.song_id) {
     song = null; songId = null; $('list').innerHTML = ''; lineEls = []; wordEls = []; builtFor = null;
-    if (!v.protools && !v.ptsl) showMsg('Aguardando o Pro Tools<small>abra a sessão da música e dê play</small>');
-    else if (!v.session) showMsg('Pro Tools aberto, nenhuma sessão<small>abra a sessão da música</small>');
-    else showMsg('Sessão "' + esc(v.session) + '" não está na biblioteca<small>coloque o áudio na pasta das músicas ou escolha no editor</small>');
+    if (!v.protools && !v.ptsl) showMsg('Abrindo o Pro Tools', 'Quando ele abrir, abra a sessão da música. Se ainda não tem música aqui, adicione uma.', ADD + STUDIO);
+    else if (!v.session) showMsg('Pro Tools aberto, nenhuma sessão', 'Abra a sessão da música no Pro Tools, ou crie a sessão em Músicas e letras com um clique.', ADD + STUDIO);
+    else showMsg('Sessão "' + esc(v.session) + '" sem letra', 'Adicione a música para transcrever a letra e ela fica vinculada a esta sessão.', ADD + STUDIO);
     return;
   }
   const s = await loadSong(v.song_id);
   if (!s) return;
   if (s.status === 'transcrevendo' || s.status === 'pendente') {
-    showMsg(esc(s.name) + '<small>' + (s.status === 'transcrevendo' ? 'transcrevendo a letra em segundo plano…' : 'na fila para transcrever') + '</small>'); return;
+    const p = v.progresso; showMsg(esc(s.name), (p ? esc(p.etapa) + (p.pct != null ? ' · ' + p.pct + '%' : '') : 'na fila para transcrever') + '. A letra aparece aqui quando terminar.'); return;
   }
-  if (!s.lines || !s.lines.length) { showMsg(esc(s.name) + '<small>' + esc(s.erro || 'sem letra ainda, cole no editor') + '</small>'); return; }
+  if (!s.lines || !s.lines.length) { showMsg(esc(s.name), esc(s.erro || 'sem letra ainda'), STUDIO); return; }
   hideMsg();
   const key = v.song_id + ':' + s.lines.length + ':' + s.lines.map(l => l.t + '|' + l.text).join('~');
   if (builtFor !== key) { song = s; songId = v.song_id; build(s); builtFor = key; }
 }
-window.applyView = applyView;
-
 function connect() {
   const es = new EventSource('/api/stream');
   es.onmessage = e => applyView(JSON.parse(e.data));
-  es.onerror = () => { es.close(); showMsg('Prompter desconectado<small>reconectando…</small>'); setTimeout(connect, 1500); };
+  es.onerror = () => { es.close(); showMsg('Prompter desconectado', 'reconectando'); setTimeout(connect, 1500); };
 }
 connect();
-
 function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); control({action:'next'}); }
   else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); control({action:'prev'}); }
   else if (e.key.toLowerCase() === 'a') control({action:'auto'});
-  else if (e.key === ' ') { e.preventDefault(); if (view && view.ptsl) fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'toggle'})}); }
   else if (e.key.toLowerCase() === 'f') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+  else if (e.key === ' ') { e.preventDefault(); if (view && view.ptsl && view.session) fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'toggle'})}); }
 });
 let cursorTimer;
-document.addEventListener('mousemove', () => {
-  document.body.classList.add('show-cursor'); clearTimeout(cursorTimer);
-  cursorTimer = setTimeout(() => document.body.classList.remove('show-cursor'), 2000);
-});
+document.addEventListener('mousemove', () => { document.body.classList.add('show-cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => document.body.classList.remove('show-cursor'), 2500); });
 </script>
 </body>
 </html>

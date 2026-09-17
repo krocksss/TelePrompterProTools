@@ -2,257 +2,312 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Prompter · estúdio de letras</title>
+<title>Prompter · músicas</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="icon" href="/static/prompter.png">
 <style>
-  :root { --bg:#101012; --card:#18181c; --fg:#ececf0; --dim:#8b8b95; --line:#26262c; --ok:#5ee3a0; --warn:#f2c94c; --bad:#ff5c5c; --acc:#7cc0ff; --wave:#3b6f5a; --wave2:#5ee3a0; }
+  :root {
+    --bg:#0f1113; --panel:#15181b; --panel-2:#1b1f23; --line:#262b30; --line-2:#323940;
+    --fg:#e9ecef; --muted:#8e969e; --faint:#5c646c;
+    --accent:#3ecf8e; --accent-ink:#06261a; --accent-dim:#1c3a2c; --warn:#e8b84a; --bad:#e5645f;
+    --r:10px; --ease:cubic-bezier(.16,1,.3,1);
+    --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font-family:"Segoe UI",system-ui,sans-serif; font-size:15px; }
-  header { display:flex; gap:16px; align-items:center; padding:12px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
-  header h1 { font-size:17px; margin:0; font-weight:600; }
-  header .status { flex:1; }
-  a { color:var(--acc); text-decoration:none; }
-  button { background:#24242a; color:var(--fg); border:1px solid #33333a; border-radius:8px; padding:7px 12px; cursor:pointer; font-size:14px; white-space:nowrap; }
-  button:hover { background:#2d2d34; } button.primary { background:#2a4a6a; border-color:#3a6a9a; } button.danger { border-color:#6a2a2a; }
-  button.on { background:#1f4a35; border-color:#2f7a55; color:var(--ok); }
-  button:disabled { opacity:.45; cursor:default; }
-  main { display:grid; grid-template-columns: 290px 1fr; gap:16px; padding:16px 20px; }
-  @media (max-width:860px) { main { grid-template-columns:1fr; } }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
-  .songs .it { padding:9px 10px; border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:10px; }
-  .songs .it:hover { background:#202026; } .songs .it.sel { background:#24303c; }
+  html,body { height:100%; }
+  body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--font); font-size:15px; line-height:1.45; -webkit-font-smoothing:antialiased; }
+  a { color:var(--fg); text-decoration:none; }
+  button { font:inherit; color:var(--fg); background:var(--panel-2); border:1px solid var(--line-2); border-radius:var(--r); padding:9px 14px; cursor:pointer; white-space:nowrap; transition:background .15s, border-color .15s, transform .08s; }
+  button:hover { background:#22272c; border-color:#3c444c; }
+  button:active { transform:translateY(1px); }
+  button:disabled { opacity:.45; cursor:default; transform:none; }
+  button.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; }
+  button.primary:hover { background:#4ddc9c; border-color:#4ddc9c; }
+  button.quiet { background:transparent; border-color:transparent; color:var(--muted); }
+  button.quiet:hover { background:var(--panel-2); color:var(--fg); border-color:var(--line-2); }
+  button.on { background:var(--accent-dim); border-color:#2c6b4c; color:var(--accent); }
+  button.danger { color:var(--bad); }
+  input, select, textarea { font:inherit; color:var(--fg); background:#0c0e10; border:1px solid var(--line-2); border-radius:var(--r); padding:8px 10px; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(62,207,142,.15); }
+  kbd { font:12px/1 var(--font); background:var(--panel-2); border:1px solid var(--line-2); border-radius:6px; padding:2px 6px; color:var(--muted); }
+
+  header { position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:18px; height:60px; padding:0 22px; background:rgba(15,17,19,.92); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  header .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:-.01em; }
+  header .brand img { width:24px; height:24px; border-radius:6px; }
+  header nav { display:flex; gap:4px; }
+  header nav a { padding:7px 12px; border-radius:var(--r); color:var(--muted); }
+  header nav a:hover { background:var(--panel-2); color:var(--fg); }
+  header nav a.cur { color:var(--fg); background:var(--panel-2); }
+  #status { margin-left:auto; display:flex; gap:10px; align-items:center; font-size:13px; color:var(--muted); }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px; background:var(--panel); border:1px solid var(--line); color:var(--muted); white-space:nowrap; }
+  .pill.ok { color:var(--fg); border-color:#2c6b4c; }
+  .pill .led { width:7px; height:7px; border-radius:50%; background:var(--faint); }
+  .pill.ok .led { background:var(--accent); box-shadow:0 0 8px rgba(62,207,142,.6); }
+  .pill.warn .led { background:var(--warn); }
+  #tcPill { font-variant-numeric:tabular-nums; }
+  header .credit { display:flex; align-items:center; gap:7px; color:var(--faint); font-size:12px; }
+  header .credit img { width:20px; height:20px; border-radius:50%; }
+
+  main { display:grid; grid-template-columns:300px 1fr; min-height:calc(100dvh - 60px); }
+  aside { border-right:1px solid var(--line); padding:18px 16px; display:flex; flex-direction:column; gap:14px; }
+  section#editor { padding:22px 28px 60px; min-width:0; }
+  @media (max-width:900px) { main { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } section#editor { padding:18px 16px 60px; } header nav { display:none; } }
+
+  #drop { border:1.5px dashed var(--line-2); border-radius:var(--r); padding:16px 14px; cursor:pointer; color:var(--muted); transition:border-color .2s, background .2s; }
+  #drop b { display:block; color:var(--fg); font-size:15px; margin-bottom:2px; }
+  #drop:hover, body.dragging #drop { border-color:var(--accent); background:var(--accent-dim); color:var(--fg); }
+  #upBar { height:4px; background:var(--line); border-radius:2px; margin-top:10px; overflow:hidden; display:none; }
+  #upBar i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
+  body.dragging::after { content:"Solte a música aqui"; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:38px; font-weight:700; letter-spacing:-.02em; color:var(--accent); background:rgba(15,17,19,.8); z-index:50; pointer-events:none; }
+
+  .songs { display:flex; flex-direction:column; gap:2px; }
+  .songs .lbl { font-size:12px; color:var(--faint); margin:6px 4px 4px; }
+  .songs .it { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:var(--r); cursor:pointer; transition:background .15s; }
+  .songs .it:hover { background:var(--panel-2); }
+  .songs .it.sel { background:var(--panel-2); box-shadow:inset 3px 0 0 var(--accent); }
   .songs .it .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .songs .it.live .n::before { content:"▶ "; color:var(--ok); }
-  .st { font-size:11px; padding:2px 7px; border-radius:99px; background:#2a2a30; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; white-space:nowrap; }
-  .st.pronto,.st.manual,.st.alinhado { color:var(--ok); } .st.transcrevendo,.st.pendente { color:var(--warn); } .st.erro,.st.sem-voz { color:var(--bad); }
-  .meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; color:var(--dim); font-size:13px; }
-  .meta input { background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:6px 8px; font-size:14px; }
-  #edName { font-size:17px; font-weight:600; flex:1; min-width:200px; }
-  .hint { color:var(--dim); font-size:13px; line-height:1.45; }
-  .status { font-size:13px; color:var(--dim); display:flex; gap:12px; flex-wrap:wrap; align-items:center; }
-  .dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; margin-right:5px; }
-  .dot.ok { background:var(--ok); } .dot.warn { background:var(--warn); }
-  kbd { background:#24242a; border:1px solid #3a3a42; border-radius:5px; padding:0 5px; font-size:12px; }
-  /* transporte */
-  #transport { display:flex; gap:10px; align-items:center; margin-top:12px; padding:10px 12px; background:#131316; border:1px solid var(--line); border-radius:10px; flex-wrap:wrap; }
-  #transport .time { font-variant-numeric:tabular-nums; font-size:20px; min-width:150px; letter-spacing:.02em; }
-  #transport .time small { color:var(--dim); font-size:13px; }
-  #bPlay { width:46px; height:38px; font-size:18px; }
-  #wave { width:100%; height:110px; display:block; margin-top:10px; border-radius:8px; background:#0c0c0e; cursor:crosshair; }
-  #waveMsg { font-size:12px; color:var(--dim); margin-top:4px; }
-  /* linhas */
-  .lines { display:flex; flex-direction:column; gap:4px; margin-top:12px; }
-  .row { display:grid; grid-template-columns: 30px 88px 1fr auto; gap:6px; align-items:center; padding:2px 4px; border-radius:8px; }
-  .row .i { color:var(--dim); font-size:12px; text-align:right; }
-  .row input.t { width:100%; background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:6px 6px; font-variant-numeric:tabular-nums; font-size:13px; }
-  .row input.x { width:100%; background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:7px 10px; font-size:16px; }
-  .row.cur { background:#182420; } .row.cur input.x { border-color:var(--ok); }
-  .row.past input.x { color:#b8b8c0; }
-  .row .ops { display:flex; gap:3px; opacity:.35; } .row:hover .ops, .row.cur .ops { opacity:1; }
-  .row .ops button { padding:4px 8px; font-size:13px; }
-  .words { grid-column: 2 / 5; display:flex; flex-wrap:wrap; gap:4px; padding:2px 0 6px 0; }
-  .words span { font-size:12px; padding:1px 7px; border-radius:99px; background:#1e1e24; color:var(--dim); cursor:pointer; }
-  .words span.sung { color:var(--fg); background:#243a30; }
-  .words span:hover { color:var(--acc); }
-  textarea { width:100%; min-height:200px; background:#111114; color:var(--fg); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:15px; }
-  #prog { margin-top:12px; padding:12px; border-radius:10px; background:#1a1a20; }
-  #prog .bar { height:6px; background:#26262c; border-radius:3px; margin-top:8px; overflow:hidden; }
-  #prog .bar i { display:block; height:100%; background:var(--ok); width:0; transition:width .4s; }
-  .saved { color:var(--ok); font-size:13px; opacity:0; transition:opacity .3s; } .saved.show { opacity:1; }
-  .warn { color:var(--warn); }
-  details { margin-top:14px; } summary { cursor:pointer; color:var(--dim); }
-  .toolbar { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
-  #drop { border:2px dashed #3a3a44; border-radius:12px; padding:18px 12px; text-align:center; color:var(--dim); cursor:pointer; margin-bottom:12px; transition:border-color .2s, background .2s; }
-  #drop b { color:var(--fg); display:block; font-size:15px; margin-bottom:4px; }
-  #drop:hover, body.dragging #drop { border-color:var(--ok); background:#15201a; color:var(--fg); }
-  body.dragging::after { content:"Solte a música aqui"; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:600; color:var(--ok); background:rgba(0,0,0,.72); z-index:50; pointer-events:none; }
-  #upBar { height:5px; background:#26262c; border-radius:3px; margin-top:8px; overflow:hidden; display:none; } #upBar i { display:block; height:100%; background:var(--acc); width:0; }
-  #bigDrop { margin-top:14px; padding:40px 20px; }
-  .link { font-size:13px; color:var(--dim); } .link select { background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:4px 8px; }
+  .songs .it.live .n::before { content:"▶ "; color:var(--accent); font-size:11px; }
+  .st { font-size:11px; padding:3px 8px; border-radius:999px; background:var(--panel-2); color:var(--muted); white-space:nowrap; }
+  .st.pronto, .st.alinhado, .st.manual { color:var(--accent); background:var(--accent-dim); }
+  .st.transcrevendo, .st.pendente { color:var(--warn); background:#3a3020; }
+  .st.erro, .st.sem-voz { color:var(--bad); background:#3a2422; }
+
+  #empty { max-width:720px; margin:6vh auto 0; animation:rise .5s var(--ease); }
+  #empty h1 { font-size:34px; letter-spacing:-.02em; line-height:1.1; margin:0 0 8px; }
+  #empty p { color:var(--muted); margin:0 0 26px; max-width:52ch; }
+  #bigDrop { border:1.5px dashed var(--line-2); border-radius:14px; padding:46px 24px; text-align:center; cursor:pointer; transition:border-color .2s, background .2s; }
+  #bigDrop:hover, body.dragging #bigDrop { border-color:var(--accent); background:var(--accent-dim); }
+  #bigDrop .big { font-size:22px; font-weight:600; margin-bottom:6px; }
+  #bigDrop .sm { color:var(--muted); }
+  .steps { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:26px; }
+  .steps div { padding:14px 16px; border-top:2px solid var(--line-2); }
+  .steps b { display:block; margin-bottom:4px; }
+  .steps span { color:var(--muted); font-size:14px; }
+  @media (max-width:700px) { .steps { grid-template-columns:1fr; } }
+
+  .head { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  #edName { font-size:22px; font-weight:700; letter-spacing:-.01em; background:transparent; border-color:transparent; padding:6px 8px; flex:1; min-width:220px; }
+  #edName:hover { border-color:var(--line-2); } #edName:focus { background:#0c0e10; }
+  .saved { color:var(--accent); font-size:13px; opacity:0; transition:opacity .3s; } .saved.show { opacity:1; }
+
+  #guide { margin-top:16px; display:grid; grid-template-columns:auto 1fr auto; gap:16px; align-items:center; padding:16px 18px; border-radius:var(--r); background:var(--panel); border:1px solid var(--line); animation:rise .4s var(--ease); }
+  #guide .n { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; background:var(--panel-2); color:var(--muted); }
+  #guide.ok .n { background:var(--accent); color:var(--accent-ink); }
+  #guide.busy .n { background:#3a3020; color:var(--warn); }
+  #guide.bad .n { background:#3a2422; color:var(--bad); }
+  #guide h3 { margin:0 0 2px; font-size:16px; }
+  #guide p { margin:0; color:var(--muted); font-size:14px; }
+  #guide .bar { height:5px; background:var(--line); border-radius:3px; margin-top:10px; overflow:hidden; }
+  #guide .bar i { display:block; height:100%; width:0; background:var(--warn); transition:width .5s var(--ease); }
+  #guide .bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
+  @keyframes rise { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @media (max-width:700px) { #guide { grid-template-columns:auto 1fr; } #guide > :last-child { grid-column:1 / -1; } }
+
+  #transport { display:flex; align-items:center; gap:14px; margin-top:16px; flex-wrap:wrap; }
+  #bPlay { width:62px; height:62px; border-radius:50%; font-size:22px; display:flex; align-items:center; justify-content:center; background:var(--accent); color:var(--accent-ink); border-color:var(--accent); padding:0; }
+  #bPlay:hover { background:#4ddc9c; }
+  #bPlay.stop { background:var(--panel-2); color:var(--fg); border-color:var(--line-2); }
+  .time { font-variant-numeric:tabular-nums; font-size:26px; font-weight:600; letter-spacing:-.01em; min-width:200px; }
+  .time small { color:var(--faint); font-size:14px; font-weight:400; }
+  #tSrc { color:var(--muted); font-size:13px; }
+  #wave { width:100%; height:96px; display:block; margin-top:14px; border-radius:var(--r); background:#0c0e10; cursor:crosshair; border:1px solid var(--line); }
+  #waveMsg { font-size:12px; color:var(--faint); margin-top:4px; }
+
+  .lines { display:flex; flex-direction:column; gap:3px; margin-top:18px; }
+  .row { display:grid; grid-template-columns:28px 88px 1fr auto; gap:8px; align-items:center; padding:3px 6px; border-radius:var(--r); transition:background .2s; }
+  .row .i { color:var(--faint); font-size:12px; text-align:right; font-variant-numeric:tabular-nums; }
+  .row input.t { width:100%; padding:7px 6px; font-variant-numeric:tabular-nums; font-size:13px; color:var(--muted); }
+  .row input.x { width:100%; padding:8px 12px; font-size:16px; }
+  .row.cur { background:var(--accent-dim); } .row.cur input.x { border-color:var(--accent); color:var(--fg); }
+  .row.past input.x { color:var(--muted); }
+  .row .ops { display:flex; gap:2px; opacity:0; transition:opacity .15s; } .row:hover .ops, .row.cur .ops, .row:focus-within .ops { opacity:1; }
+  .row .ops button { padding:5px 9px; font-size:13px; }
+  .words { grid-column:2 / 5; display:flex; flex-wrap:wrap; gap:4px; padding:0 0 6px 0; }
+  .words span { font-size:12px; padding:2px 8px; border-radius:999px; background:var(--panel-2); color:var(--muted); cursor:pointer; transition:background .2s, color .2s; }
+  .words span.sung { color:var(--accent-ink); background:var(--accent); }
+  .words span:hover { color:var(--fg); }
+
+  details.more { margin-top:22px; border-top:1px solid var(--line); padding-top:12px; }
+  details.more summary { cursor:pointer; color:var(--muted); list-style:none; display:flex; align-items:center; gap:8px; }
+  details.more summary::-webkit-details-marker { display:none; }
+  details.more summary::before { content:"›"; display:inline-block; transition:transform .2s; font-size:18px; color:var(--faint); }
+  details.more[open] summary::before { transform:rotate(90deg); }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; align-items:center; }
+  .hint { color:var(--muted); font-size:13px; }
+  .box { margin-top:12px; padding:14px; border-radius:var(--r); background:var(--panel); border:1px solid var(--line); }
+  textarea { width:100%; min-height:200px; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>Estúdio de letras</h1>
-  <span class="status" id="status"></span>
-  <a href="/config">configuração</a>
-  <a href="/" target="_blank">abrir prompter ↗</a>
-  <a href="https://github.com/krocksss" target="_blank" title="feito por Marllon Machado" style="display:inline-flex;align-items:center;gap:6px;color:var(--dim)"><img src="/static/autor.png" style="width:22px;height:22px;border-radius:50%" alt="">krocksss</a>
+  <a class="brand" href="/estudio"><img src="/static/prompter.png" alt="">Prompter</a>
+  <nav>
+    <a class="cur" href="/estudio">Músicas</a>
+    <a href="/" target="_blank">Teleprompter</a>
+    <a href="/config">Configuração</a>
+  </nav>
+  <div id="status"></div>
+  <a class="credit" href="https://github.com/krocksss" target="_blank" title="feito por Marllon Machado"><img src="/static/autor.png" alt="">krocksss</a>
 </header>
 <main>
-  <section class="card">
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <strong style="flex:1">Músicas</strong>
-      <button onclick="control({action:'rescan'}).then(loadSongs)" title="reler a pasta e a sessão aberta">reler</button>
-    </div>
-    <div id="drop" onclick="$('fileIn').click()"><b>＋ Adicionar música</b>arraste o MP3/WAV aqui ou clique para escolher<div id="upBar"><i></i></div></div>
+  <aside>
+    <div id="drop" onclick="$('fileIn').click()"><b>Adicionar música</b>Arraste o MP3 ou WAV aqui, ou clique para escolher no computador.<div id="upBar"><i></i></div></div>
     <input type="file" id="fileIn" accept="audio/*,.mp3,.wav,.m4a,.flac,.aif,.aiff,.ogg" multiple style="display:none">
     <div class="songs" id="songs"></div>
-    <div class="hint" style="margin-top:12px">Abra a sessão no Pro Tools e ela entra aqui sozinha. Ou coloque o MP3 na <a href="#" onclick="fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"action\":\"open_folder\"}'});return false">pasta das músicas</a>.</div>
-    <details>
-      <summary>Atalhos</summary>
-      <div class="hint" style="margin-top:6px">
-        <kbd>espaço</kbd> play/pause (fora do texto) · <kbd>Ctrl</kbd>+<kbd>espaço</kbd> dentro do texto<br>
-        <kbd>Enter</kbd> na linha = "esta linha começa AGORA" e vai para a próxima (marcação por toque)<br>
-        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> divide a linha no cursor · <kbd>Backspace</kbd> no início junta com a anterior<br>
-        <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> volta/avança 2 s · <kbd>Ctrl</kbd>+<kbd>S</kbd> salvar (salva sozinho também)
-      </div>
-    </details>
-  </section>
-  <section class="card" id="editor">
-    <div class="hint">Escolha uma música à esquerda, ou solte o arquivo da música em qualquer lugar desta página.</div>
-    <div id="bigDrop" class="hint" style="border:2px dashed #3a3a44;border-radius:12px;text-align:center;cursor:pointer" onclick="$('fileIn').click()">
-      <div style="font-size:22px;color:var(--fg);margin-bottom:6px">Arraste a música aqui</div>ou clique para procurar no computador.<br>Ela é transcrita em segundo plano; quando ficar pronta, aperte ▶ e o Pro Tools toca junto.
-    </div>
-  </section>
+    <button class="quiet" onclick="control({action:'rescan'}).then(loadSongs)" title="reler a pasta de músicas e a sessão aberta">Reler pasta</button>
+  </aside>
+  <section id="editor"></section>
 </main>
 <script>
 const $ = id => document.getElementById(id);
 let songs = {}, cfg = {}, sel = null, view = null, song = null;
-let rows = [];                    // modelo das linhas: {t,end,text,words,changed}
+let rows = [];
 let audio = new Audio(); audio.preload = 'auto';
 let peaks = null, peaksFor = null, duration = 0;
-let ptMode = true;                // comandar / seguir o Pro Tools quando conectado
-let hearHere = false;             // tocar o áudio local junto com o Pro Tools
-let base = 0, baseAt = 0, playing = false; // relógio vindo do servidor (Pro Tools)
+let ptMode = true, hearHere = false;
+let base = 0, baseAt = 0, playing = false;
 let saveTimer = null, dirtyRows = false;
+let curRow = -2, focused = -1;
 
 function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }
 function transport(body) { return fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({song_id: sel}, body))}); }
 function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function fmt(t) { t = Math.max(0, t||0); const m = Math.floor(t/60), s = Math.floor(t%60), ms = Math.round((t - Math.floor(t))*1000); return m + ':' + String(s).padStart(2,'0') + '.' + String(ms).padStart(3,'0'); }
 function parseT(v) { v = String(v).trim(); const m = v.match(/^(\d+):(\d+(?:[.,]\d+)?)$/); if (m) return +m[1]*60 + parseFloat(m[2].replace(',','.')); const f = parseFloat(v.replace(',','.')); return isNaN(f) ? 0 : f; }
+function norm(s) { return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function isPT() { return ptMode && view && view.ptsl && !!view.session; }
+function sessionMatches() { if (!song || !view || !view.session) return false; return view.song_id === sel || norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
 
-// ---- lista de músicas
 async function loadSongs() {
   const r = await fetch('/api/songs'); const j = await r.json();
   songs = j.songs; cfg = j.config;
   const ids = Object.keys(songs).sort((a,b) => songs[a].name.localeCompare(songs[b].name));
-  $('songs').innerHTML = ids.length ? ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
-      <span class="n">${esc(songs[id].name)}</span><span class="st ${songs[id].status}">${esc(songs[id].status)}</span></div>`).join('')
-    : '<div class="hint">Nenhuma música ainda. Abra uma sessão no Pro Tools ou coloque um MP3 na pasta.</div>';
-  if (sel && !songs[sel]) { sel = null; song = null; $('editor').innerHTML = '<div class="hint">Escolha uma música à esquerda.</div>'; }
+  $('songs').innerHTML = ids.length ? '<div class="lbl">Suas músicas</div>' + ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
+      <span class="n">${esc(songs[id].name)}</span><span class="st ${songs[id].status}">${statusLabel(songs[id].status)}</span></div>`).join('') : '';
+  if (sel && !songs[sel]) { sel = null; song = null; }
+  if (!sel) renderEmpty();
 }
+function statusLabel(s) { return ({pendente:'na fila', transcrevendo:'transcrevendo', pronto:'pronta', alinhado:'pronta', manual:'pronta', erro:'erro', 'sem-voz':'sem voz'})[s] || s; }
 async function select(id) {
   if (sel !== id) { if (dirtyRows) await save(); sel = id; await loadSong(); }
   loadSongs();
 }
 async function loadSong() {
   const r = await fetch('/api/song/' + sel); song = await r.json();
-  rows = (song.lines || []).map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words || null, changed: false }));
+  rows = (song.lines || []).map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words || null }));
   dirtyRows = false;
-  renderEditor();
-  loadAudio();
+  renderEditor(); loadAudio();
 }
 
-// ---- editor
-function isPT() { return ptMode && view && view.ptsl && !!view.session; }
+function renderEmpty() {
+  if (sel) return;
+  $('editor').innerHTML = `<div id="empty">
+    <h1>Solte a música e aperte play.</h1>
+    <p>O Prompter transcreve a letra com o tempo de cada palavra e mostra tudo sincronizado com o Pro Tools no teleprompter.</p>
+    <div id="bigDrop" onclick="$('fileIn').click()"><div class="big">Arraste o MP3 ou WAV para cá</div><div class="sm">ou clique para procurar no computador</div></div>
+    <div class="steps">
+      <div><b>1. Solte a música</b><span>Ela entra na lista e começa a ser transcrita. Na primeira vez o modelo é baixado (1,6 GB).</span></div>
+      <div><b>2. Sessão no Pro Tools</b><span>Um clique cria a sessão com a música na faixa 1. Se você já tem a sessão, é só abrir.</span></div>
+      <div><b>3. Aperte play</b><span>Aqui ou no Pro Tools: os dois andam juntos e o teleprompter acompanha.</span></div>
+    </div></div>`;
+}
+
 function renderEditor() {
   const s = song; if (!s) return;
-  const p = songs[sel] && songs[sel].progresso;
   $('editor').innerHTML = `
-    <div class="meta">
-      <input id="edName" value="${esc(s.name)}" onchange="saveMeta()">
-      <span class="st ${s.status}" id="edStatus">${esc(s.status)}</span>
-      <span class="saved" id="saved">salvo ✓</span>
+    <div class="head">
+      <input id="edName" value="${esc(s.name)}" onchange="saveMeta()" title="nome da música">
+      <span class="st ${s.status}" id="edStatus">${statusLabel(s.status)}</span>
+      <span class="saved" id="saved">salvo</span>
+      <button class="quiet" onclick="control({action:'force_song',song_id:'${sel}'})" title="mostrar esta música no teleprompter agora, mesmo com outra sessão aberta">Mostrar no teleprompter</button>
     </div>
-    <div class="meta" style="margin-top:6px">
-      <span title="arquivo de áudio usado">origem: ${esc(s.source ? s.source.split(/[\\/]/).pop() : (s.candidates && s.candidates[0] ? s.candidates[0].split(/[\\/]/).pop() : '—'))}</span>
-      <span>ajuste da sessão (s): <input id="edOffset" value="${s.offset||0}" style="width:64px" onchange="saveMeta()" title="quanto o áudio está deslocado dentro da sessão do Pro Tools"></span>
-      <span class="link" id="linkBox"></span>
-      <span id="sessWarn" class="warn"></span>
-      ${s.erro ? `<span style="color:var(--bad)">${esc(s.erro)}</span>` : ''}
-    </div>
-    <div id="prog" style="display:${s.status==='transcrevendo'||s.status==='pendente'?'block':'none'}">
-      <div id="progTxt">${s.status==='pendente' ? 'na fila para transcrever' : 'transcrevendo…'}</div><div class="bar"><i id="progBar"></i></div>
-      <div class="hint" style="margin-top:6px">Quando terminar, a letra aparece abaixo com o tempo de cada verso. Aí é só apertar ▶: com o botão 🔗 aceso o Pro Tools toca junto.</div>
-    </div>
+    <div id="guide"></div>
     <div id="transport">
-      <button id="bPlay" onclick="togglePlay()" title="espaço">▶</button>
-      <button onclick="seekTo(0)" title="início">⏮</button>
+      <button id="bPlay" onclick="togglePlay()" title="tocar (espaço)">▶</button>
       <span class="time"><span id="tNow">0:00.000</span> <small>/ <span id="tDur">${fmt(s.duracao||0)}</span></small></span>
-      <button id="bPT" class="${ptMode?'on':''}" onclick="ptMode=!ptMode;renderTransport()" title="play/pause/seek aqui comandam o Pro Tools, e o Pro Tools comanda aqui">🔗 Pro Tools</button>
-      <button id="bHear" class="${hearHere?'on':''}" onclick="hearHere=!hearHere;renderTransport()" title="tocar o áudio local junto (o Pro Tools já toca o dele)">🔊 ouvir aqui</button>
-      <span class="hint" id="tSrc"></span>
+      <button id="bPT" class="${ptMode?'on':''}" onclick="ptMode=!ptMode;renderTransport()">Sincronizar com o Pro Tools</button>
+      <button id="bHear" class="${hearHere?'on':''}" onclick="hearHere=!hearHere;renderTransport()" title="tocar o áudio também neste computador">Ouvir aqui</button>
+      <span id="tSrc"></span>
     </div>
-    <canvas id="wave" height="110"></canvas>
+    <canvas id="wave" height="96"></canvas>
     <div id="waveMsg"></div>
-    <div class="toolbar">
-      <button class="primary" onclick="save()">salvar</button>
-      <button onclick="realign()" title="usa as palavras que o sistema ouviu no áudio para dar tempo a cada verso, depois de você corrigir o texto">realinhar com o áudio</button>
-      <button onclick="$('pasteBox').style.display='block'">letra oficial (colar)</button>
-      <button onclick="toggleTracks()" title="escolher qual arquivo/faixa da sessão transcrever">♪ transcrever faixa…</button>
-      <button onclick="addRow(rows.length-1)">+ linha</button>
-      <span style="flex:1"></span>
-      <button onclick="control({action:'force_song',song_id:'${sel}'})" title="mostrar esta música no prompter mesmo que a sessão tenha outro nome">usar no prompter agora</button>
-      <button onclick="control({action:'force_song',song_id:null})">automático</button>
-      <button class="danger" onclick="del()">remover</button>
-    </div>
-    <div id="trackBox" style="display:none;margin-top:12px" class="meta">
-      <span>faixa (arquivo de áudio) para transcrever:</span>
-      <select id="trackSel" style="max-width:420px;background:#111114;border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px">
-        ${(s.candidates||[]).concat((s.session_audio||[]).filter(c => !(s.candidates||[]).includes(c))).map(c => `<option value="${esc(c)}" ${c===s.source?'selected':''}>${esc(c.split(/[\\/]/).pop())}</option>`).join('')}
-      </select>
-      <button class="primary" onclick="retry($('trackSel').value)">transcrever esta faixa</button>
-      <button onclick="retry()">todas (escolhe a que tem mais voz)</button>
-      <span class="hint">Roda em segundo plano e nunca enquanto o Pro Tools toca. Se a letra oficial estiver colada, ela é realinhada no fim.</span>
-    </div>
-    <div id="pasteBox" style="display:none;margin-top:12px">
-      <textarea id="pasteTxt" placeholder="Cole a letra OFICIAL, uma linha por verso. Cada verso é casado com as palavras ouvidas no áudio e recebe o tempo real.">${esc(s.official||'')}</textarea>
-      <div class="meta" style="margin-top:6px">${s.words_n || (s.words && s.words.length) ? '' : 'sem transcrição ainda: os tempos ficam espaçados por igual até você marcar com Enter. '} <button class="primary" onclick="applyText()">alinhar com o áudio</button> <button onclick="$('pasteBox').style.display='none'">fechar</button></div>
-    </div>
-    <div class="lines" id="lines"></div>`;
-  renderRows(); renderTransport(); drawWave(); renderLink();
+    <div class="lines" id="lines"></div>
+    <details class="more">
+      <summary>Mais opções</summary>
+      <div class="toolbar">
+        <button onclick="realign()" title="depois de corrigir o texto, recalcula o tempo de cada verso pelas palavras ouvidas">Realinhar com o áudio</button>
+        <button onclick="$('pasteBox').style.display='block'">Colar letra oficial</button>
+        <button onclick="toggleTracks()">Transcrever de novo</button>
+        <button onclick="addRow(rows.length-1)">Novo verso</button>
+        <span class="hint">Ajuste da sessão (s): <input id="edOffset" value="${s.offset||0}" style="width:64px" onchange="saveMeta()" title="quanto o áudio está deslocado dentro da sessão do Pro Tools"></span>
+        <span style="flex:1"></span>
+        <button class="quiet" onclick="control({action:'force_song',song_id:null})">Voltar ao automático</button>
+        <button class="quiet danger" onclick="del()">Remover da lista</button>
+      </div>
+      <div id="trackBox" class="box" style="display:none">
+        <div class="hint" style="margin-bottom:8px">Escolha o arquivo ou faixa da sessão para transcrever. Roda em segundo plano e nunca enquanto o Pro Tools toca.</div>
+        <select id="trackSel" style="max-width:420px">${(s.candidates||[]).concat((s.session_audio||[]).filter(c => !(s.candidates||[]).includes(c))).map(c => `<option value="${esc(c)}" ${c===s.source?'selected':''}>${esc(c.split(/[\\/]/).pop())}</option>`).join('')}</select>
+        <button class="primary" onclick="retry($('trackSel').value)">Transcrever esta faixa</button>
+        <button onclick="retry()">Todas as faixas</button>
+      </div>
+      <div id="pasteBox" class="box" style="display:none">
+        <textarea id="pasteTxt" placeholder="Cole a letra oficial, um verso por linha. Cada verso é casado com as palavras ouvidas no áudio e recebe o tempo real.">${esc(s.official||'')}</textarea>
+        <div class="toolbar"><button class="primary" onclick="applyText()">Alinhar com o áudio</button><button class="quiet" onclick="$('pasteBox').style.display='none'">Fechar</button></div>
+      </div>
+      <div class="hint" style="margin-top:12px">Atalhos: <kbd>espaço</kbd> play/pause · <kbd>Enter</kbd> no verso marca "começa agora" · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> divide · <kbd>Backspace</kbd> no início junta · <kbd>Alt</kbd>+<kbd>←</kbd><kbd>→</kbd> pula 2 s</div>
+    </details>`;
+  renderRows(); renderTransport(); drawWave(); renderGuide();
 }
-function renderLink() {
-  const el = $('linkBox'); if (!el || !song) return;
-  const sess = view && view.session; const alias = song.session_alias;
-  const same = sess && (norm(sess) === norm(song.name) || (alias && norm(alias) === norm(sess)));
-  const mk = '<button class="primary" onclick="makeSession()" title="cria a sessão no Pro Tools com o nome da música e o áudio na faixa 1 (ou abre, se já existir)">▣ criar/abrir sessão no Pro Tools com esta música</button>';
-  if (same) { el.innerHTML = '🔗 vinculada à sessão <b>' + esc(sess) + '</b>'; return; }
-  if (!view || !view.ptsl) { el.innerHTML = alias ? 'vinculada à sessão "' + esc(alias) + '"' : ''; return; }
-  if (sess) el.innerHTML = 'sessão aberta no Pro Tools: <b>' + esc(sess) + '</b> <button onclick="linkTo(' + JSON.stringify(sess).replace(/"/g,'&quot;') + ')" title="quando esta sessão estiver aberta, o prompter mostra esta música">vincular a ela</button> ' + mk;
-  else el.innerHTML = '<span class="warn">Pro Tools sem sessão aberta</span> ' + mk;
+
+function renderGuide() {
+  const g = $('guide'); if (!g || !song) return;
+  const p = (songs[sel] && songs[sel].progresso) || null;
+  const st = (songs[sel] && songs[sel].status) || song.status;
+  let cls = '', n = '', h = '', txt = '', act = '', bar = '';
+  if (st === 'transcrevendo' || st === 'pendente') {
+    cls = 'busy'; n = '1'; h = p ? p.etapa : (st === 'pendente' ? 'Na fila para transcrever' : 'Transcrevendo');
+    txt = 'A letra aparece aqui quando terminar, com o tempo de cada palavra.';
+    bar = `<div class="bar ${p && p.pct != null ? '' : 'indet'}"><i style="width:${p && p.pct != null ? p.pct : 0}%"></i></div>`;
+  } else if (st === 'erro') {
+    cls = 'bad'; n = '!'; h = 'A transcrição falhou'; txt = esc(song.erro || ''); act = '<button class="primary" onclick="retry()">Tentar de novo</button>';
+  } else if (!view || !view.ptsl) {
+    cls = ''; n = '2'; h = view && view.protools ? 'Pro Tools aberto, sem conexão' : 'Abra o Pro Tools';
+    txt = 'A letra está pronta. Com o Pro Tools aberto, o play daqui e de lá andam juntos.';
+    act = '<button onclick="openPT()">Abrir o Pro Tools</button>';
+  } else if (!sessionMatches()) {
+    cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Crie a sessão desta música no Pro Tools';
+    txt = view.session ? `Aberta agora: "${esc(view.session)}". Vincule esta música a ela ou crie a sessão própria.` : 'Um clique: a sessão nasce com a música na faixa 1. Se já existir, ela é aberta.';
+    act = (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>';
+  } else {
+    cls = 'ok'; n = '✓'; h = 'Pronta e sincronizada com "' + esc(view.session) + '"';
+    txt = 'Aperte play aqui ou no Pro Tools. O teleprompter acompanha palavra por palavra.';
+    act = '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>';
+  }
+  g.className = cls;
+  g.innerHTML = `<div class="n">${n}</div><div><h3>${h}</h3><p>${txt}</p>${bar}</div><div>${act}</div>`;
 }
-function norm(s) { return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+function openPT() { fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'open_protools'})}); }
 async function makeSession() {
-  const el = $('linkBox'); el.innerHTML = 'preparando a sessão no Pro Tools…';
+  const g = $('guide'); g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Preparando a sessão no Pro Tools</h3><p>Convertendo o áudio e importando na faixa 1.</p><div class="bar indet"><i></i></div></div><div></div>';
   const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel})});
-  const j = await r.json(); el.innerHTML = (j.ok ? '✔ ' : '✖ ') + esc(j.msg || '');
-  setTimeout(async () => { await loadSong(); renderLink(); }, 2500);
+  const j = await r.json();
+  if (!j.ok) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para preparar a sessão</h3><p>' + esc(j.msg || '') + '</p></div><div><button onclick="makeSession()">Tentar de novo</button></div>'; return; }
+  setTimeout(async () => { await loadSong(); }, 2500);
 }
 async function linkTo(sess) { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_alias: sess})}); await loadSong(); }
 
-// ---- arrastar / escolher arquivo
-let dragN = 0;
-document.addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')) { dragN++; document.body.classList.add('dragging'); } });
-document.addEventListener('dragleave', e => { dragN = Math.max(0, dragN - 1); if (!dragN) document.body.classList.remove('dragging'); });
-document.addEventListener('dragover', e => { e.preventDefault(); });
-document.addEventListener('drop', e => { e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
-$('fileIn').addEventListener('change', e => { if (e.target.files.length) upload(e.target.files); e.target.value = ''; });
-function upload(files) {
-  const fd = new FormData();
-  [...files].forEach(f => fd.append('file', f, f.name));
-  if (view && view.session) fd.append('session_alias', view.session);
-  const bar = $('upBar'); bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
-  const x = new XMLHttpRequest(); x.open('POST', '/api/upload');
-  x.upload.onprogress = ev => { if (ev.lengthComputable) bar.firstElementChild.style.width = Math.round(ev.loaded / ev.total * 100) + '%'; };
-  x.onload = async () => { bar.style.display = 'none'; try { const j = JSON.parse(x.responseText); if (j.ok) { await loadSongs(); await select(j.song_id); } else alert(j.erro || 'falha no envio'); } catch (e) { alert('falha no envio'); } };
-  x.onerror = () => { bar.style.display = 'none'; alert('falha no envio'); };
-  x.send(fd);
-}
 function renderRows() {
   $('lines').innerHTML = rows.map((l, i) => `<div class="row" data-i="${i}">
     <span class="i">${i+1}</span>
-    <input class="t" value="${fmt(l.t)}" title="início (m:ss.mmm) — clique para ir até aqui" onchange="setT(${i}, this.value)" onfocus="seekTo(rows[${i}].t, true)">
+    <input class="t" value="${fmt(l.t)}" title="início do verso (clique para ir até aqui)" onchange="setT(${i}, this.value)" onfocus="seekTo(rows[${i}].t, true)">
     <input class="x" value="${esc(l.text)}" oninput="setText(${i}, this.value)" onkeydown="rowKey(event, ${i})" onfocus="focusRow(${i})">
-    <span class="ops"><button title="esta linha começa AGORA (Enter)" onclick="tap(${i})">⏱</button><button title="nova linha abaixo" onclick="addRow(${i})">+</button><button title="apagar" onclick="delRow(${i})">×</button></span>
+    <span class="ops"><button title="este verso começa agora (Enter)" onclick="tap(${i})">agora</button><button title="novo verso abaixo" onclick="addRow(${i})">+</button><button title="apagar verso" onclick="delRow(${i})">×</button></span>
     <div class="words" id="w${i}"></div>
   </div>`).join('');
   markRows(-2);
 }
-let curRow = -2, focused = -1;
 function markRows(force) {
   const t = songTime() + (view ? view.lead : 0.3);
   let idx = -1; for (let i = 0; i < rows.length; i++) { if (rows[i].t <= t) idx = i; else break; }
@@ -261,21 +316,19 @@ function markRows(force) {
     curRow = idx;
     if (idx >= 0 && playing && focused < 0) { const el = document.querySelector('#lines .row.cur'); if (el) el.scrollIntoView({block:'center', behavior:'smooth'}); }
   }
-  // chips de palavras da linha atual/focada
   const show = focused >= 0 ? focused : idx;
   document.querySelectorAll('#lines .words').forEach((w, i) => {
     if (i !== show) { if (w.innerHTML) w.innerHTML = ''; return; }
     const ws = rows[i].words || [];
     if (!ws.length) { w.innerHTML = ''; return; }
     const tt = songTime();
-    if (w.dataset.n != ws.length) { w.innerHTML = ws.map((x, k) => `<span onclick="seekTo(${x.s})" title="${fmt(x.s)}">${esc(x.w)}</span>`).join(''); w.dataset.n = ws.length; }
+    if (w.dataset.n != ws.length) { w.innerHTML = ws.map(x => `<span onclick="seekTo(${x.s})" title="${fmt(x.s)}">${esc(x.w)}</span>`).join(''); w.dataset.n = ws.length; }
     w.querySelectorAll('span').forEach((sp, k) => sp.classList.toggle('sung', tt >= ws[k].s));
   });
 }
 function focusRow(i) { focused = i; markRows(-2); }
-document.addEventListener('focusout', e => { if (e.target.classList && e.target.classList.contains('x')) { focused = -1; } });
-
-function setText(i, v) { rows[i].text = v; rows[i].words = null; rows[i].changed = true; touch(); }
+document.addEventListener('focusout', e => { if (e.target.classList && e.target.classList.contains('x')) focused = -1; });
+function setText(i, v) { rows[i].text = v; rows[i].words = null; touch(); }
 function setT(i, v) { const nt = parseT(v); const d = nt - rows[i].t; rows[i].t = nt; if (rows[i].end) rows[i].end += d; if (rows[i].words) rows[i].words = rows[i].words.map(w => ({w:w.w, s:w.s+d, e:w.e+d})); touch(); drawWave(); }
 function tap(i) {
   const now = songTime(); const d = now - rows[i].t;
@@ -286,7 +339,7 @@ function tap(i) {
   touch(); drawWave(); markRows(-2);
   const next = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (next) { next.focus(); next.scrollIntoView({block:'center'}); }
 }
-function addRow(i) { const t = rows[i] ? rows[i].t + 2 : 0; rows.splice(i+1, 0, {t, end: null, text: '', words: null, changed: true}); touch(); renderRows(); const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) n.focus(); }
+function addRow(i) { const t = rows[i] ? rows[i].t + 2 : 0; rows.splice(i+1, 0, {t, end:null, text:'', words:null}); touch(); renderRows(); const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) n.focus(); }
 function delRow(i) { rows.splice(i, 1); touch(); renderRows(); drawWave(); }
 function rowKey(e, i) {
   if (e.key === 'Enter' && e.ctrlKey) { e.preventDefault(); splitRow(i, e.target.selectionStart); }
@@ -303,49 +356,43 @@ function splitRow(i, pos) {
   let t2 = null, wa = null, wb = null;
   if (r.words && r.words.length) { const na = a.split(/\s+/).filter(Boolean).length; wa = r.words.slice(0, na); wb = r.words.slice(na); if (wb.length) t2 = wb[0].s; }
   if (t2 === null) { const end = r.end || (rows[i+1] ? rows[i+1].t : r.t + 4); t2 = r.t + (end - r.t) * (a.length / Math.max(1, r.text.length)); }
-  rows[i] = {t: r.t, end: t2, text: a, words: wa && wa.length ? wa : null, changed: true};
-  rows.splice(i+1, 0, {t: t2, end: r.end, text: b, words: wb && wb.length ? wb : null, changed: true});
+  rows[i] = {t:r.t, end:t2, text:a, words: wa && wa.length ? wa : null};
+  rows.splice(i+1, 0, {t:t2, end:r.end, text:b, words: wb && wb.length ? wb : null});
   touch(); renderRows(); drawWave(); const n = document.querySelector(`#lines .row[data-i="${i+1}"] input.x`); if (n) n.focus();
 }
 function mergeRow(i) {
   const p = rows[i-1], r = rows[i]; const posEnd = p.text.length;
-  rows[i-1] = {t: p.t, end: r.end || p.end, text: (p.text + ' ' + r.text).replace(/\s+/g,' ').trim(), words: (p.words && r.words) ? p.words.concat(r.words) : null, changed: true};
+  rows[i-1] = {t:p.t, end:r.end || p.end, text:(p.text + ' ' + r.text).replace(/\s+/g,' ').trim(), words:(p.words && r.words) ? p.words.concat(r.words) : null};
   rows.splice(i, 1); touch(); renderRows(); drawWave();
   const n = document.querySelector(`#lines .row[data-i="${i-1}"] input.x`); if (n) { n.focus(); n.setSelectionRange(posEnd + 1, posEnd + 1); }
 }
 function touch() { dirtyRows = true; clearTimeout(saveTimer); saveTimer = setTimeout(save, 1500); }
-
 async function save() {
   if (!sel) return;
   clearTimeout(saveTimer);
-  const body = { lines: rows.map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words })),
-                 offset: parseFloat(($('edOffset')||{}).value)||0, name: ($('edName')||{}).value || undefined };
+  const body = { lines: rows.map(l => ({t:l.t, end:l.end, text:l.text, words:l.words})), offset: parseFloat(($('edOffset')||{}).value)||0, name: ($('edName')||{}).value || undefined };
   const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   const j = await r.json(); dirtyRows = false;
-  if (j.song) { song = j.song; rows = (song.lines || []).map(l => ({ t: l.t, end: l.end, text: l.text, words: l.words || null, changed: false }));
-    if (document.activeElement && document.activeElement.classList.contains('x')) { /* nao re-renderiza enquanto digita */ syncRowTimes(); } else renderRows();
-    $('edStatus').textContent = song.status; $('edStatus').className = 'st ' + song.status; }
+  if (j.song) { song = j.song; rows = (song.lines || []).map(l => ({t:l.t, end:l.end, text:l.text, words:l.words||null}));
+    if (document.activeElement && document.activeElement.classList.contains('x')) syncRowTimes(); else renderRows();
+    const st = $('edStatus'); if (st) { st.textContent = statusLabel(song.status); st.className = 'st ' + song.status; } }
   const sv = $('saved'); if (sv) { sv.classList.add('show'); setTimeout(() => sv.classList.remove('show'), 1200); }
   drawWave(); loadSongs();
 }
-function syncRowTimes() { document.querySelectorAll('#lines .row').forEach((r, i) => { if (rows[i]) { r.querySelector('.t').value = fmt(rows[i].t); } }); }
+function syncRowTimes() { document.querySelectorAll('#lines .row').forEach((r, i) => { if (rows[i]) r.querySelector('.t').value = fmt(rows[i].t); }); }
 async function saveMeta() { await save(); }
 async function realign() { if (!sel) return; clearTimeout(saveTimer);
-  const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ lines: rows.map(l => ({t:l.t, text:l.text})), realign: true })});
-  const j = await r.json(); if (j.song) { song = j.song; rows = (song.lines||[]).map(l => ({ t:l.t, end:l.end, text:l.text, words:l.words||null, changed:false })); dirtyRows = false; renderEditor(); } }
+  const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lines: rows.map(l => ({t:l.t, text:l.text})), realign:true})});
+  const j = await r.json(); if (j.song) { song = j.song; rows = (song.lines||[]).map(l => ({t:l.t, end:l.end, text:l.text, words:l.words||null})); dirtyRows = false; renderEditor(); } }
 async function retry(source) { clearTimeout(saveTimer); await fetch('/api/song/' + sel + '/retry', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(source ? {source} : {})}); await loadSongs(); await loadSong(); }
-function toggleTracks() { const b = $('trackBox'); b.style.display = b.style.display === 'none' ? 'flex' : 'none'; }
-async function del() { if (!confirm('Remover "' + song.name + '" da biblioteca? (os arquivos ficam)')) return; await fetch('/api/song/' + sel, {method:'DELETE'}); sel = null; song = null; $('editor').innerHTML = '<div class="hint">Escolha uma música à esquerda.</div>'; loadSongs(); }
-async function applyText() {
-  await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ official: $('pasteTxt').value })});
-  await loadSongs(); await loadSong();
-}
+function toggleTracks() { const b = $('trackBox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; }
+async function del() { if (!confirm('Remover "' + song.name + '" da lista? Os arquivos continuam no computador.')) return; await fetch('/api/song/' + sel, {method:'DELETE'}); sel = null; song = null; renderEmpty(); loadSongs(); }
+async function applyText() { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({official: $('pasteTxt').value})}); await loadSongs(); await loadSong(); }
 
-// ---- áudio e forma de onda
 async function loadAudio() {
   peaks = null; duration = song.duracao || 0; drawWave();
   audio.src = '/api/song/' + sel + '/audio'; audio.load();
-  const msg = $('waveMsg'); if (msg) msg.textContent = 'lendo o áudio…';
+  const msg = $('waveMsg'); if (msg) msg.textContent = 'lendo o áudio';
   try {
     const r = await fetch('/api/song/' + sel + '/audio'); if (!r.ok) throw new Error('sem áudio');
     const buf = await r.arrayBuffer();
@@ -360,27 +407,21 @@ async function loadAudio() {
 }
 function drawWave() {
   const c = $('wave'); if (!c) return;
-  const W = c.clientWidth || 800; if (c.width !== W * devicePixelRatio) { c.width = W * devicePixelRatio; c.height = 110 * devicePixelRatio; }
+  const W = c.clientWidth || 800; if (c.width !== W * devicePixelRatio) { c.width = W * devicePixelRatio; c.height = 96 * devicePixelRatio; }
   const g = c.getContext('2d'); g.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  g.clearRect(0, 0, W, 110);
+  g.clearRect(0, 0, W, 96);
   const dur = duration || (rows.length ? rows[rows.length-1].t + 5 : 240);
   const t = songTime();
   if (peaks && peaksFor === sel) {
-    const N = peaks.length; for (let i = 0; i < N; i++) { const x = i / N * W; const h = Math.max(1, peaks[i] * 96); const tt = i / N * dur; g.fillStyle = tt <= t ? '#5ee3a0' : '#3b6f5a'; g.fillRect(x, 55 - h/2, Math.max(1, W/N - 0.3), h); }
-  } else { g.fillStyle = '#1c1c22'; g.fillRect(0, 54, W, 2); }
-  // marcas das linhas
-  rows.forEach((l, i) => { const x = l.t / dur * W; g.fillStyle = i === curRow ? '#f2c94c' : 'rgba(236,236,240,.45)'; g.fillRect(x, 4, 1, 102); g.fillStyle = i === curRow ? '#f2c94c' : 'rgba(236,236,240,.5)'; g.font = '10px Segoe UI'; g.fillText(String(i+1), x + 3, 12); });
-  // cursor
-  const x = Math.min(W, t / dur * W); g.fillStyle = '#fff'; g.fillRect(x - 1, 0, 2, 110);
+    const N = peaks.length; for (let i = 0; i < N; i++) { const x = i / N * W; const h = Math.max(1, peaks[i] * 84); const tt = i / N * dur; g.fillStyle = tt <= t ? '#3ecf8e' : '#2a4a3b'; g.fillRect(x, 48 - h/2, Math.max(1, W/N - 0.3), h); }
+  } else { g.fillStyle = '#23272b'; g.fillRect(0, 47, W, 2); }
+  rows.forEach((l, i) => { const x = l.t / dur * W; g.fillStyle = i === curRow ? '#e8b84a' : 'rgba(233,236,239,.35)'; g.fillRect(x, 4, 1, 88); g.font = '10px system-ui'; g.fillText(String(i+1), x + 3, 12); });
+  const x = Math.min(W, t / dur * W); g.fillStyle = '#fff'; g.fillRect(x - 1, 0, 2, 96);
 }
 window.addEventListener('resize', drawWave);
 document.addEventListener('click', e => { if (e.target.id === 'wave') { const r = e.target.getBoundingClientRect(); const dur = duration || (rows.length ? rows[rows.length-1].t + 5 : 240); seekTo((e.clientX - r.left) / r.width * dur); } });
 
-// ---- transporte: local (áudio no navegador) ou Pro Tools (PTSL)
-function songTime() {
-  if (isPT()) return playing ? base + (performance.now() - baseAt) / 1000 : base;
-  return audio.currentTime;
-}
+function songTime() { if (isPT()) return playing ? base + (performance.now() - baseAt) / 1000 : base; return audio.currentTime; }
 function isPlaying() { return isPT() ? playing : !audio.paused; }
 async function togglePlay() {
   if (isPT()) { await transport({action: playing ? 'stop' : 'play', seconds: playing ? undefined : songTime()}); }
@@ -389,78 +430,85 @@ async function togglePlay() {
 }
 async function seekTo(t, soft) {
   t = Math.max(0, t);
-  if (isPT()) { if (soft && playing) return; base = t; baseAt = performance.now(); await transport({action:'locate', seconds: t}); }
-  else { audio.currentTime = t; }
+  if (isPT()) { if (soft && playing) return; base = t; baseAt = performance.now(); await transport({action:'locate', seconds:t}); }
+  else audio.currentTime = t;
   drawWave(); markRows(-2);
 }
 function renderTransport() {
   const b = $('bPlay'); if (!b) return;
-  b.textContent = isPlaying() ? '❚❚' : '▶';
-  $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl);
+  const pl = isPlaying(); b.textContent = pl ? '■' : '▶'; b.className = pl ? 'stop' : ''; b.title = pl ? 'parar (espaço)' : 'tocar (espaço)';
+  $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl && view.session);
   $('bHear').className = hearHere ? 'on' : ''; $('bHear').style.display = isPT() ? '' : 'none';
-  $('tSrc').textContent = isPT() ? ('comandando o Pro Tools' + (view.source === 'mtc' ? ' · posição por MTC' : ' · posição estimada')) : (view && view.ptsl ? (view.session ? 'áudio local (Pro Tools desligado do estúdio)' : 'áudio local · Pro Tools sem sessão aberta') : 'áudio local');
-  const w = $('sessWarn'); if (w) w.textContent = (view && view.ptsl && view.session && song && view.song_id !== sel) ? ('sessão aberta no Pro Tools: "' + view.session + '" (outra música)') : '';
-  // áudio local acompanha o Pro Tools quando "ouvir aqui"
+  $('tSrc').textContent = isPT() ? (view.source === 'mtc' ? 'Pro Tools, posição por MTC' : 'Pro Tools, posição estimada') : (view && view.ptsl && !view.session ? 'tocando aqui, o Pro Tools está sem sessão aberta' : 'tocando aqui');
   if (isPT()) { if (hearHere && playing) { if (audio.paused) { audio.currentTime = songTime(); audio.play().catch(()=>{}); } } else if (!audio.paused) audio.pause(); }
 }
 setInterval(() => { if (isPT() && hearHere && playing && !audio.paused && Math.abs(audio.currentTime - songTime()) > 0.25) audio.currentTime = songTime(); }, 600);
 audio.addEventListener('play', renderTransport); audio.addEventListener('pause', renderTransport);
 audio.addEventListener('loadedmetadata', () => { if (!duration) { duration = audio.duration; if ($('tDur')) $('tDur').textContent = fmt(duration); } });
-
-function frame() {
-  requestAnimationFrame(frame);
-  if (!song) return;
-  const t = songTime(); const el = $('tNow'); if (el) el.textContent = fmt(t);
-  markRows(); if (isPlaying() || (isPT() && playing)) drawWave();
-}
+function frame() { requestAnimationFrame(frame); if (!song) return; const t = songTime(); const el = $('tNow'); if (el) el.textContent = fmt(t); markRows(); if (isPlaying()) drawWave(); }
 requestAnimationFrame(frame);
 setInterval(() => { if (song && !isPlaying()) drawWave(); }, 500);
 
-// ---- teclado global
 document.addEventListener('keydown', e => {
   const inText = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA';
-  if (e.key === ' ' && (!inText || e.ctrlKey)) { e.preventDefault(); togglePlay(); }
+  if (e.key === ' ' && (!inText || e.ctrlKey) && song) { e.preventDefault(); togglePlay(); }
   else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); seekTo(songTime() - 2); }
   else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); seekTo(songTime() + 2); }
   else if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
 });
 
-// ---- estado vindo do servidor (Pro Tools)
+let dragN = 0;
+document.addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')) { dragN++; document.body.classList.add('dragging'); } });
+document.addEventListener('dragleave', e => { dragN = Math.max(0, dragN - 1); if (!dragN) document.body.classList.remove('dragging'); });
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => { e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+$('fileIn').addEventListener('change', e => { if (e.target.files.length) upload(e.target.files); e.target.value = ''; });
+function upload(files) {
+  const fd = new FormData();
+  [...files].forEach(f => fd.append('file', f, f.name));
+  if (view && view.session) fd.append('session_alias', view.session);
+  const bar = $('upBar'); bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
+  const x = new XMLHttpRequest(); x.open('POST', '/api/upload');
+  x.upload.onprogress = ev => { if (ev.lengthComputable) bar.firstElementChild.style.width = Math.round(ev.loaded / ev.total * 100) + '%'; };
+  x.onload = async () => { bar.style.display = 'none'; try { const j = JSON.parse(x.responseText); if (j.ok) { await loadSongs(); await select(j.song_id); } else alert(j.erro || 'falha no envio'); } catch (e) { alert('falha no envio'); } };
+  x.onerror = () => { bar.style.display = 'none'; alert('falha no envio'); };
+  x.send(fd);
+}
+
 function connect() {
   const es = new EventSource('/api/stream');
   es.onmessage = e => {
     const v = JSON.parse(e.data); const prev = view; view = v;
-    $('status').innerHTML = `<span><i class="dot ${v.ptsl?'ok':(v.protools?'warn':'')}"></i>${v.ptsl ? 'Pro Tools' : (v.protools ? 'Pro Tools (sem PTSL)' : 'Pro Tools fechado')}</span>` +
-      `<span><i class="dot ${v.session?'ok':''}"></i>${esc(v.session || 'sem sessão')}</span>` +
-      `<span><i class="dot ${v.midi?'ok':'warn'}"></i>${v.source === 'mtc' ? 'MTC' : (v.midi ? 'MTC (parado)' : 'MTC opcional')}</span>` +
-      `<span>${v.tc}${v.playing?' ▶':' ■'}</span>`;
+    $('status').innerHTML =
+      `<span class="pill ${v.ptsl ? 'ok' : (v.protools ? 'warn' : '')}"><i class="led"></i>${v.ptsl ? 'Pro Tools conectado' : (v.protools ? 'Pro Tools sem conexão' : 'Pro Tools fechado')}</span>` +
+      `<span class="pill ${v.session ? 'ok' : ''}"><i class="led"></i>${v.session ? esc(v.session) : 'sem sessão'}</span>` +
+      `<span class="pill" id="tcPill">${v.tc} ${v.playing ? '▶' : '■'}</span>`;
     if (sel && v.song_id === sel && v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
     else if (sel && v.seconds != null && song) { base = v.seconds - (song.offset || 0); baseAt = performance.now(); }
     playing = !!v.playing;
-    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source) renderTransport();
-    if (sel && v.song_id === sel && v.progresso) { const p = v.progresso; if ($('prog')) { $('prog').style.display = 'block'; $('progTxt').textContent = p.etapa + (p.pct != null ? ' · ' + p.pct + '%' : ''); $('progBar').style.width = (p.pct||0) + '%'; } }
-    if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') { loadSong(); }
-    if (prev && (prev.song_id !== v.song_id)) loadSongs();
+    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id) { renderTransport(); renderGuide(); }
+    if (sel && v.song_id === sel && v.progresso && songs[sel]) { songs[sel].progresso = v.progresso; renderGuide(); }
+    if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') loadSong();
+    if (prev && prev.song_id !== v.song_id) loadSongs();
   };
   es.onerror = () => { es.close(); setTimeout(connect, 1500); };
 }
 connect();
-loadSongs().then(async () => {   // ?transcrever=1&song=<id>: abre a música (ou a que está no Pro Tools) já no seletor de faixa
+loadSongs().then(async () => {
   const q = new URLSearchParams(location.search);
   if (q.get('adicionar')) $('fileIn').click();
   if (q.get('transcrever')) {
     let id = q.get('song'); if (!id) { try { const v = await (await fetch('/api/state')).json(); id = v.song_id; } catch (e) {} }
-    if (!id) { const ids = Object.keys(songs); id = ids[0]; }
-    if (id && songs[id]) { await select(id); const b = $('trackBox'); if (b) b.style.display = 'flex'; }
+    if (!id) id = Object.keys(songs)[0];
+    if (id && songs[id]) { await select(id); const d = document.querySelector('details.more'); if (d) d.open = true; const b = $('trackBox'); if (b) b.style.display = 'block'; }
   }
 });
-setInterval(async () => {   // status das músicas (transcrição em andamento) sem atrapalhar quem digita
+setInterval(async () => {
   const r = await fetch('/api/songs'); const j = await r.json();
-  const a = JSON.stringify(Object.values(j.songs).map(s => [s.status, s.progresso && s.progresso.pct, s.n_lines]));
-  const b = JSON.stringify(Object.values(songs).map(s => [s.status, s.progresso && s.progresso.pct, s.n_lines]));
-  if (a !== b) { const wasTr = songs[sel] && songs[sel].status === 'transcrevendo'; songs = j.songs; loadSongs();
-    if (sel && j.songs[sel]) { const p = j.songs[sel].progresso; if (p && $('prog')) { $('prog').style.display='block'; $('progTxt').textContent = p.etapa + (p.pct != null ? ' · ' + p.pct + '%' : ''); $('progBar').style.width = (p.pct||0) + '%'; }
-      if (wasTr && j.songs[sel].status !== 'transcrevendo') loadSong(); } }
+  const a = JSON.stringify(Object.values(j.songs).map(s => [s.status, s.progresso && s.progresso.pct, s.progresso && s.progresso.etapa, s.n_lines]));
+  const b = JSON.stringify(Object.values(songs).map(s => [s.status, s.progresso && s.progresso.pct, s.progresso && s.progresso.etapa, s.n_lines]));
+  if (a !== b) { const was = songs[sel] && songs[sel].status; songs = j.songs; loadSongs();
+    if (sel && j.songs[sel]) { renderGuide(); if ((was === 'transcrevendo' || was === 'pendente') && !['transcrevendo','pendente'].includes(j.songs[sel].status)) loadSong(); } }
 }, 2000);
 </script>
 </body>

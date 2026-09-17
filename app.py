@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.15"
+VERSION = "2.0.16"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -1227,6 +1227,31 @@ class PTLink(threading.Thread):
         log("audio importado na sessao aberta:", name, "a", sr, "Hz")
         return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
 
+    def session_matches(self, song):
+        sess = self.state.session
+        if not sess:
+            return False
+        return norm(sess) == norm(song["name"]) or (song.get("session_alias") and norm(song["session_alias"]) == norm(sess))
+
+    def ensure_session(self, song):
+        """Garante que a musica esteja carregada no Pro Tools ANTES de tocar:
+        - sessao dela aberta com audio -> nada a fazer
+        - sessao aberta (dela ou vazia) sem audio -> coloca o audio (na taxa da sessao)
+        - outra sessao com audio, ou nenhuma -> cria/abre a sessao da musica (a anterior e salva e fechada)"""
+        if self.session_matches(song):
+            n = self.state.session_audio_n
+            if n is None:
+                try:
+                    n = session_audio_count(self.engine.session_path())
+                except Exception:
+                    n = None
+            if n == 0:
+                return self.import_into_session(song)
+            return {"ok": True, "session": self.state.session, "msg": "sessão já pronta"}
+        if self.state.session and self.state.session_audio_n == 0:
+            return self.import_into_session(song)
+        return self.make_session(song)
+
     def auto_prepare(self, song):
         """Musica recem-solta: deixa o Pro Tools pronto sem cliques.
         - sem sessao aberta -> cria a sessao da musica com o audio na faixa 1
@@ -1855,6 +1880,13 @@ def run_web(state, transcriber, ptlink):
             off = float(s.get("offset") or 0) if s else 0.0
         sec = None if body.get("seconds") is None else float(body["seconds"]) + off
         try:
+            if act == "play" and body.get("ensure") and body.get("song_id"):
+                s = LIB.get(body["song_id"])
+                if s and not (ptlink.session_matches(s) and (state.session_audio_n or 0) > 0):
+                    r = await asyncio.to_thread(ptlink.ensure_session, s)   # deixa o Pro Tools com esta musica
+                    if not r.get("ok"):
+                        return web.json_response({"ok": False, "erro": r.get("msg", "não consegui preparar o Pro Tools")}, status=500)
+                    time.sleep(0.5)
             if act == "play":
                 await asyncio.to_thread(ptlink.play, sec)
             elif act == "stop":

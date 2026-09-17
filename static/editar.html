@@ -181,7 +181,7 @@ function esc(s) { return (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 function fmt(t) { t = Math.max(0, t||0); const m = Math.floor(t/60), s = Math.floor(t%60), ms = Math.round((t - Math.floor(t))*1000); return m + ':' + String(s).padStart(2,'0') + '.' + String(ms).padStart(3,'0'); }
 function parseT(v) { v = String(v).trim(); const m = v.match(/^(\d+):(\d+(?:[.,]\d+)?)$/); if (m) return +m[1]*60 + parseFloat(m[2].replace(',','.')); const f = parseFloat(v.replace(',','.')); return isNaN(f) ? 0 : f; }
 function norm(s) { return (s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
-function isPT() { return ptMode && view && view.ptsl && !!view.session; }
+function isPT() { return ptMode && view && view.ptsl; }
 function sessionMatches() { if (!song || !view || !view.session) return false; return view.song_id === sel || norm(view.session) === norm(song.name) || (song.session_alias && norm(song.session_alias) === norm(view.session)); }
 
 async function loadSongs() {
@@ -282,11 +282,11 @@ function renderGuide() {
     act = '<button onclick="openPT()">Abrir o Pro Tools</button>';
   } else if (!sessionMatches()) {
     cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Sem sessão aberta no Pro Tools';
-    txt = view.session ? `Aberta agora: "${esc(view.session)}". Vincule esta música a ela ou crie a sessão própria.` : 'Ao soltar uma música nova isso é automático. Para esta, um clique cria a sessão com a música na faixa 1.';
+    txt = view.session ? `Aberta agora: "${esc(view.session)}". Aperte play: o Prompter carrega esta música no Pro Tools (na sessão dela) antes de tocar.` : 'Aperte play: o Prompter cria a sessão com a música na faixa 1 e toca.';
     act = (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>';
   } else if (view.session_audio_n === 0) {
     cls = ''; n = '2'; h = 'A sessão "' + esc(view.session) + '" está sem áudio';
-    txt = 'Sincroniza, mas o Pro Tools toca silêncio. Coloque a música na faixa 1 desta sessão com um clique.';
+    txt = 'Aperte play: o Prompter coloca a música na faixa 1 desta sessão e toca. Ou clique abaixo para só colocar.';
     act = '<button class="primary" onclick="importIntoSession()">Colocar a música nesta sessão</button>';
   } else {
     cls = 'ok'; n = '✓'; h = 'Pronta e sincronizada com "' + esc(view.session) + '"';
@@ -438,8 +438,22 @@ document.addEventListener('click', e => { if (e.target.id === 'wave') { const r 
 
 function songTime() { if (isPT()) return playing ? base + (performance.now() - baseAt) / 1000 : base; return audio.currentTime; }
 function isPlaying() { return isPT() ? playing : !audio.paused; }
+let preparing = false;
 async function togglePlay() {
-  if (isPT()) { await transport({action: playing ? 'stop' : 'play', seconds: playing ? undefined : songTime()}); }
+  if (preparing) return;
+  if (isPT()) {
+    if (playing) { await transport({action:'stop'}); }
+    else {
+      const needs = !(sessionMatches() && (view.session_audio_n || 0) > 0);
+      if (needs) { preparing = true; const g = $('guide'); if (g) { g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Carregando a música no Pro Tools</h3><p>Convertendo o áudio e preparando a sessão. O play começa em seguida.</p><div class="bar indet"><i></i></div></div><div></div>'; } }
+      try {
+        const r = await transport({action:'play', seconds: songTime(), ensure: true});
+        const j = await r.json();
+        if (!j.ok) { const g = $('guide'); if (g) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para preparar o Pro Tools</h3><p>' + esc(j.erro || '') + '</p></div><div><button onclick="togglePlay()">Tentar de novo</button></div>'; } }
+        else if (needs) setTimeout(loadSong, 1500);
+      } finally { preparing = false; }
+    }
+  }
   else { if (audio.paused) { try { await audio.play(); } catch (e) {} } else audio.pause(); }
   renderTransport();
 }
@@ -452,9 +466,9 @@ async function seekTo(t, soft) {
 function renderTransport() {
   const b = $('bPlay'); if (!b) return;
   const pl = isPlaying(); b.textContent = pl ? '■' : '▶'; b.className = pl ? 'stop' : ''; b.title = pl ? 'parar (espaço)' : 'tocar (espaço)';
-  $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl && view.session);
+  $('bPT').className = ptMode ? 'on' : ''; $('bPT').disabled = !(view && view.ptsl);
   $('bHear').className = hearHere ? 'on' : ''; $('bHear').style.display = isPT() ? '' : 'none';
-  $('tSrc').textContent = isPT() ? (view.source === 'mtc' ? 'Pro Tools, posição por MTC' : 'Pro Tools, posição estimada') : (view && view.ptsl && !view.session ? 'tocando aqui, o Pro Tools está sem sessão aberta' : 'tocando aqui');
+  $('tSrc').textContent = isPT() ? (view.session ? (view.source === 'mtc' ? 'Pro Tools, posição por MTC' : 'Pro Tools, posição estimada') : 'o play vai carregar a música no Pro Tools') : 'tocando aqui';
   if (isPT()) { if (hearHere && playing) { if (audio.paused) { audio.currentTime = songTime(); audio.play().catch(()=>{}); } } else if (!audio.paused) audio.pause(); }
 }
 setInterval(() => { if (isPT() && hearHere && playing && !audio.paused && Math.abs(audio.currentTime - songTime()) > 0.25) audio.currentTime = songTime(); }, 600);

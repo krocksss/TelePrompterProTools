@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.2"
+VERSION = "2.0.3"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -529,13 +529,48 @@ class Transcriber(threading.Thread):
     def hub_dir():
         return Path(os.environ.get("HF_HUB_CACHE") or (Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"))
 
+    def model_dir(self, name=None):
+        return DATA / "models" / (name or CFG["modelo_whisper"])
+
     def whisper_cached(self, name=None):
         name = name or CFG["modelo_whisper"]
-        repo = WHISPER_REPOS.get(name, (None, 0))[0]
-        if not repo:
+        d = self.model_dir(name)
+        return d if (d / "model.bin").is_file() and not (d / "model.bin").is_symlink() else None
+
+    def hub_snapshot(self, repo):
+        """Pasta do snapshot no cache do Hugging Face, se o modelo ja foi baixado por la."""
+        d = self.hub_dir() / ("models--" + repo.replace("/", "--")) / "snapshots"
+        if not d.exists():
             return None
-        d = self.hub_dir() / ("models--" + repo.replace("/", "--"))
-        return d if (d / "snapshots").exists() and any((d / "snapshots").iterdir()) else None
+        for snap in sorted(d.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if (snap / "model.bin").exists():
+                return snap
+        return None
+
+    def materialize(self, repo, mdir, sid=None):
+        """Garante mdir com arquivos reais (sem symlink): copia do cache do hub ou baixa com local_dir."""
+        import shutil
+        mdir.mkdir(parents=True, exist_ok=True)
+        snap = self.hub_snapshot(repo)
+        if snap is not None:
+            log("  copiando modelo do cache do hub para", mdir)
+            for f in snap.iterdir():
+                real = Path(os.path.realpath(f))
+                dst = mdir / f.name
+                if dst.exists() and dst.stat().st_size == real.stat().st_size:
+                    continue
+                tmp = mdir / (f.name + ".copiando")
+                shutil.copyfile(real, tmp)
+                os.replace(tmp, dst)
+            return
+        from faster_whisper.utils import download_model
+        log("  baixando modelo para", mdir)
+        download_model(repo, output_dir=str(mdir))   # local_dir: arquivos reais
+        for f in list(mdir.iterdir()):                  # por garantia, desfaz qualquer link
+            if f.is_symlink():
+                real = Path(os.path.realpath(f))
+                f.unlink()
+                shutil.copyfile(real, f)
 
     def demucs_cached(self):
         for cand in (Path.home() / ".cache" / "torch" / "hub" / "checkpoints", self.hub_dir() / "models--adefossez--HTDemucs"):
@@ -550,26 +585,27 @@ class Transcriber(threading.Thread):
         from faster_whisper import WhisperModel
         self.model = None
         repo, size_mb = WHISPER_REPOS.get(name, (name, 0))
+        mdir = self.model_dir(name)
         cached = self.whisper_cached(name)
-        log("carregando modelo whisper", name, "(cache)" if cached else "(primeira vez: baixando ~%d MB)" % size_mb)
+        log("carregando modelo whisper", name, "(pronto em %s)" % mdir if cached else "(primeira vez: baixando ~%d MB)" % size_mb)
         stop = threading.Event()
         if not cached and sid:
-            hub = self.hub_dir() / ("models--" + repo.replace("/", "--"))
-
             def watch():
                 while not stop.is_set():
                     try:
-                        got = sum(f.stat().st_size for f in hub.rglob("*") if f.is_file()) if hub.exists() else 0
+                        got = sum(f.stat().st_size for f in mdir.rglob("*") if f.is_file()) if mdir.exists() else 0
                         self.set_prog(sid, "baixando modelo de transcrição (só uma vez, %d MB)" % size_mb, min(0.99, got / (size_mb * 1e6)))
                     except Exception:
                         pass
                     stop.wait(2)
             threading.Thread(target=watch, daemon=True).start()
         try:
+            if not cached:
+                self.materialize(repo, mdir, sid)
             last = None
             for tentativa in range(6):
                 try:
-                    self.model = WhisperModel(repo, device="cpu", compute_type="int8", cpu_threads=int(CFG["cpu_threads"]))
+                    self.model = WhisperModel(str(mdir), device="cpu", compute_type="int8", cpu_threads=int(CFG["cpu_threads"]))
                     break
                 except Exception as e:   # logo apos o download o arquivo pode estar travado (antivirus) -> espera e tenta de novo
                     last = e

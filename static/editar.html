@@ -213,7 +213,7 @@ function renderEmpty() {
     <div id="bigDrop" onclick="$('fileIn').click()"><div class="big">Arraste o MP3 ou WAV para cá</div><div class="sm">ou clique para procurar no computador</div></div>
     <div class="steps">
       <div><b>1. Solte a música</b><span>Ela entra na lista e começa a ser transcrita. Na primeira vez o modelo é baixado (1,6 GB).</span></div>
-      <div><b>2. Sessão no Pro Tools</b><span>Um clique cria a sessão com a música na faixa 1. Se você já tem a sessão, é só abrir.</span></div>
+      <div><b>2. Pro Tools pronto sozinho</b><span>Sem sessão aberta, o Prompter cria a sessão com a música. Sessão vazia, ele coloca a música nela. Sua sessão do show, ele só sincroniza.</span></div>
       <div><b>3. Aperte play</b><span>Aqui ou no Pro Tools: os dois andam juntos e o teleprompter acompanha.</span></div>
     </div></div>`;
 }
@@ -281,8 +281,8 @@ function renderGuide() {
     txt = 'A letra está pronta. Com o Pro Tools aberto, o play daqui e de lá andam juntos.';
     act = '<button onclick="openPT()">Abrir o Pro Tools</button>';
   } else if (!sessionMatches()) {
-    cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Crie a sessão desta música no Pro Tools';
-    txt = view.session ? `Aberta agora: "${esc(view.session)}". Vincule esta música a ela ou crie a sessão própria.` : 'Um clique: a sessão nasce com a música na faixa 1. Se já existir, ela é aberta.';
+    cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Sem sessão aberta no Pro Tools';
+    txt = view.session ? `Aberta agora: "${esc(view.session)}". Vincule esta música a ela ou crie a sessão própria.` : 'Ao soltar uma música nova isso é automático. Para esta, um clique cria a sessão com a música na faixa 1.';
     act = (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>';
   } else if (view.session_audio_n === 0) {
     cls = ''; n = '2'; h = 'A sessão "' + esc(view.session) + '" está sem áudio';

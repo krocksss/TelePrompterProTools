@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.11"
+VERSION = "2.0.12"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -54,6 +54,7 @@ DEFAULT_CFG = {
     "abrir_navegador": True,       # toda vez que abre: tela do prompter no navegador
     "abrir_protools": True,        # toda vez que abre: abre o Pro Tools junto
     "sessao_auto": True,           # sessao aberta no Pro Tools entra sozinha na biblioteca
+    "preparar_protools": True,     # ao soltar uma musica, cria/completa a sessao no Pro Tools sozinho
     "ptsl": True,
     "checar_atualizacao": True,    # olha as releases do GitHub
 }
@@ -1190,6 +1191,27 @@ class PTLink(threading.Thread):
         log("audio importado na sessao aberta:", name, "a", sr, "Hz")
         return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
 
+    def auto_prepare(self, song):
+        """Musica recem-solta: deixa o Pro Tools pronto sem cliques.
+        - sem sessao aberta -> cria a sessao da musica com o audio na faixa 1
+        - sessao aberta VAZIA -> coloca o audio nela (na taxa da sessao) e vincula
+        - sessao aberta com audio (a sessao real do show) -> so vincula, nao mexe"""
+        if not self.state.ptsl_ok or not CFG.get("preparar_protools", True):
+            return
+        try:
+            sess = self.state.session
+            n_audio = self.state.session_audio_n
+            if not sess:
+                log("preparando o Pro Tools: criando a sessao de", song["name"])
+                self.make_session(song)
+            elif n_audio == 0:
+                log("preparando o Pro Tools: sessao", sess, "vazia, colocando o audio")
+                self.import_into_session(song)
+            else:
+                log("sessao", sess, "ja tem audio: so vinculando", song["name"])
+        except Exception as e:
+            log("nao consegui preparar o Pro Tools sozinho:", str(e)[:200])
+
     def make_session(self, song):
         """Cria (ou abre) a sessao do Pro Tools com o nome da musica e importa o audio no 0:00, numa faixa nova.
         Sessao criada em <pasta_musicas>/Sessoes/<nome>/<nome>.ptx. Devolve dict com ok/msg."""
@@ -1742,6 +1764,9 @@ def run_web(state, transcriber, ptlink):
             log("musica recebida no estudio:", fname if False else dst.name, "-> sessao", link or state.session)
         LIB.save()
         transcriber.wake.set()
+        first = LIB.get(sids[0])
+        if first is not None:
+            threading.Thread(target=ptlink.auto_prepare, args=(first,), daemon=True).start()
         return web.json_response({"ok": True, "song_ids": sids, "song_id": sids[0]})
 
     async def api_song_retry(req):
@@ -1833,7 +1858,7 @@ def run_web(state, transcriber, ptlink):
                     s["offset"] = round(state.seconds_now() - ln["t"], 2)
                 LIB.save()
         elif act == "config":
-            for k in ("pasta_musicas", "idioma", "modelo_whisper", "avanco_segundos", "avanco_palavras", "separar_vocal", "sessao_auto",
+            for k in ("pasta_musicas", "idioma", "modelo_whisper", "avanco_segundos", "avanco_palavras", "separar_vocal", "sessao_auto", "preparar_protools",
                       "abrir_navegador", "abrir_protools", "checar_atualizacao"):
                 if k in body:
                     CFG[k] = body[k]

@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.14"
+VERSION = "2.0.15"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -486,20 +486,49 @@ def lyrics_txt_for(song):
 # ----------------------------------------------------------------------------
 # Audio: conversao para WAV com o PyAV (sem depender de ffmpeg instalado)
 # ----------------------------------------------------------------------------
+def wav_ok(path, min_bytes=100_000):
+    """WAV util = existe e tem conteudo (um cabecalho sozinho tem 44 bytes)."""
+    try:
+        return Path(path).is_file() and Path(path).stat().st_size >= min_bytes
+    except OSError:
+        return False
+
+
+WAV_LOCK = threading.Lock()
+
+
 def to_wav(src, dst, rate=44100):
+    """Converte qualquer audio para WAV s16 estereo. Grava em temporario e renomeia no fim: um erro no meio
+    (ex.: NumPy indisponivel) nao pode deixar um WAV vazio que seria reaproveitado depois.
+    Serializado: duas conversoes simultaneas do mesmo arquivo truncavam o resultado."""
     import av, wave
-    with av.open(str(src)) as c:
-        stream = c.streams.audio[0]
-        res = av.AudioResampler(format="s16", layout="stereo", rate=rate)
-        with wave.open(str(dst), "wb") as w:
-            w.setnchannels(2)
-            w.setsampwidth(2)
-            w.setframerate(rate)
-            for frame in c.decode(stream):
-                for f in res.resample(frame):
+    dst = Path(dst)
+    tmp = dst.with_suffix(".convertendo.wav")
+    with WAV_LOCK:
+      if wav_ok(dst) and dst.stat().st_mtime >= os.path.getmtime(src):
+        return str(dst)   # outro pedido acabou de converter
+      try:
+        with av.open(str(src)) as c:
+            stream = c.streams.audio[0]
+            res = av.AudioResampler(format="s16", layout="stereo", rate=rate)
+            with wave.open(str(tmp), "wb") as w:
+                w.setnchannels(2)
+                w.setsampwidth(2)
+                w.setframerate(rate)
+                for frame in c.decode(stream):
+                    for f in res.resample(frame):
+                        w.writeframes(f.to_ndarray().tobytes())
+                for f in res.resample(None):
                     w.writeframes(f.to_ndarray().tobytes())
-            for f in res.resample(None):
-                w.writeframes(f.to_ndarray().tobytes())
+        if not wav_ok(tmp, 1000):
+            raise RuntimeError("conversão gerou um WAV vazio: %s" % src)
+        os.replace(tmp, dst)
+      finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
     return str(dst)
 
 
@@ -528,6 +557,8 @@ def demucs_worker(argv):
             pass
     sep = Separator(model="htdemucs", device="cpu", progress=False, callback=cb)
     wav, sr = sf.read(src, dtype="float32", always_2d=True)
+    if wav.shape[0] < sr:   # menos de 1 s: arquivo vazio/incompleto
+        raise RuntimeError("audio de entrada vazio ou incompleto: %s" % src)
     origin, stems = sep.separate_tensor(torch.from_numpy(wav.T.copy()), sr)
     v = stems["vocals"].numpy().T
     sf.write(dst, v, sep.samplerate)
@@ -688,7 +719,7 @@ class Transcriber(threading.Thread):
         out = DATA / "sep" / (Path(wav).stem + ".vocals.wav")
         out.parent.mkdir(parents=True, exist_ok=True)
         try:
-            if out.exists() and out.stat().st_mtime >= os.path.getmtime(wav) and out.stat().st_size > 1000:
+            if wav_ok(out) and out.stat().st_mtime >= os.path.getmtime(wav):
                 return str(out)
             self.wait_if_playing()
             log("  separando vocal (demucs):", os.path.basename(wav))
@@ -732,7 +763,7 @@ class Transcriber(threading.Thread):
         wavdir = DATA / "wav"
         wavdir.mkdir(exist_ok=True)
         wav = wavdir / (norm(Path(path).stem).replace(" ", "_") + ".wav")
-        if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(path):
+        if not wav_ok(wav) or wav.stat().st_mtime < os.path.getmtime(path):
             self.set_prog(sid, "lendo o áudio", None)
             to_wav(path, wav)
         model = self.get_model(sid)
@@ -1153,7 +1184,7 @@ class PTLink(threading.Thread):
         if not src:
             return None
         wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ("_%dk" % (rate // 1000) if rate != 44100 else "") + ".wav")
-        if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(src):
+        if not wav_ok(wav) or wav.stat().st_mtime < os.path.getmtime(src):
             wav.parent.mkdir(exist_ok=True)
             to_wav(src, wav, rate=rate)
         return wav
@@ -1178,6 +1209,10 @@ class PTLink(threading.Thread):
             e = self.engine
             sp = e.session_path()
             name = e.session_name()
+            af = Path(sp).parent / "Audio Files"
+            if af.exists() and any(f.name.lower().startswith(wav.stem.lower()) for f in af.iterdir()):
+                self.state.session_audio_n = session_audio_count(sp)
+                return {"ok": True, "session": name, "msg": "a música já está na sessão \"%s\"" % name}
             loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
             ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
                               destination_path=str(Path(sp).parent / "Audio Files"),

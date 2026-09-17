@@ -50,13 +50,14 @@ Name: "autostart"; Description: "Iniciar o Prompter com o Windows (fica na bande
 
 [Files]
 ; DLLs de runtime nao mudam entre versoes: so instala se faltar (evita "arquivo em uso" quando outro programa as carregou)
-Source: "{#Root}\dist\Prompter\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "msvcp140*.dll,vcruntime140*.dll,concrt140.dll,vccorlib140.dll,vcomp140.dll,msvcp140_*.dll,api-ms-win-*.dll,ucrtbase.dll"
-Source: "{#Root}\dist\Prompter\_internal\msvcp140*.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
-Source: "{#Root}\dist\Prompter\_internal\vcruntime140*.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
-Source: "{#Root}\dist\Prompter\_internal\api-ms-win-*.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist skipifsourcedoesntexist
-Source: "{#Root}\dist\Prompter\_internal\ucrtbase.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist skipifsourcedoesntexist
-Source: "{#Root}\dist\Prompter\_internal\concrt140.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist skipifsourcedoesntexist
-Source: "{#Root}\dist\Prompter\_internal\vcomp140.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist skipifsourcedoesntexist
+; exclusao ANCORADA na raiz de _internal (barra inicial): sem isso pegava numpy.libs\msvcp140-<hash>.dll e o NumPy quebrava
+Source: "{#Root}\dist\Prompter\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "\_internal\msvcp140.dll,\_internal\MSVCP140_1.dll,\_internal\MSVCP140_ATOMIC_WAIT.dll,\_internal\vcruntime140.dll,\_internal\vcruntime140_1.dll"
+; DLLs de runtime da Microsoft: iguais em toda versao, so instala se faltar (evita "arquivo em uso")
+Source: "{#Root}\dist\Prompter\_internal\msvcp140.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
+Source: "{#Root}\dist\Prompter\_internal\MSVCP140_1.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
+Source: "{#Root}\dist\Prompter\_internal\MSVCP140_ATOMIC_WAIT.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
+Source: "{#Root}\dist\Prompter\_internal\vcruntime140.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
+Source: "{#Root}\dist\Prompter\_internal\vcruntime140_1.dll"; DestDir: "{app}\_internal"; Flags: onlyifdoesntexist
 Source: "{#Root}\build\vendor\loopMIDISetup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]

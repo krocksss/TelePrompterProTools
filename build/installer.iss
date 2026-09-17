@@ -70,6 +70,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{tmp}\loopMIDISetup.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Instalando o loopMIDI (porta MIDI virtual)…"; Flags: waituntilterminated; Check: not LoopMidiInstalled
 Filename: "{commonpf32}\Tobias Erichsen\loopMIDI\loopMIDI.exe"; Flags: nowait runasoriginaluser skipifdoesntexist; Check: not LoopMidiRunning
 Filename: "{app}\Prompter.exe"; Parameters: "--primeira-vez"; Description: "Abrir o Prompter agora (abre o Pro Tools junto)"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; atualizacao silenciosa (feita pelo proprio Prompter): reabre o app ao terminar
+Filename: "{app}\Prompter.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [UninstallRun]
 Filename: "taskkill"; Parameters: "/F /IM Prompter.exe"; Flags: runhidden; RunOnceId: "killprompter"

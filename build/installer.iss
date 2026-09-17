@@ -34,7 +34,7 @@ LZMANumBlockThreads=4
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=yes
+CloseApplications=no
 RestartApplications=no
 
 [Languages]
@@ -88,11 +88,22 @@ begin
   Result := Exec('cmd.exe', '/c tasklist /FI "IMAGENAME eq loopMIDI.exe" | find /I "loopMIDI.exe" >nul', '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0);
 end;
 
-// fecha o Prompter e o loopMIDI que estiverem rodando antes de copiar os arquivos
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+function PrompterRunning: Boolean;
 var R: Integer;
 begin
-  Exec('taskkill', '/F /IM Prompter.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
+  Result := Exec('cmd.exe', '/c tasklist /FI "IMAGENAME eq Prompter.exe" | find /I "Prompter.exe" >nul', '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0);
+end;
+
+// fecha o Prompter (e filhos) por conta propria, espera sumir e so entao copia os arquivos
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var R, i: Integer;
+begin
+  Exec('taskkill', '/F /T /IM Prompter.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
+  for i := 1 to 30 do begin
+    if not PrompterRunning then break;
+    Sleep(500);
+  end;
+  Sleep(1500);
   if not LoopMidiInstalled then Exec('taskkill', '/F /IM loopMIDI.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
   Result := '';
 end;

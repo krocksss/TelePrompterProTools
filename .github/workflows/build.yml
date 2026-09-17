@@ -86,9 +86,11 @@ jobs:
 
             - **Windows**: `PrompterSetup-x.y.z.exe` (inclui o loopMIDI). Baixar, executar, Instalar.
             - **macOS**: `Prompter-x.y.z-mac-arm64.dmg` (Apple Silicon) ou `-x86_64.dmg` (Intel). Arraste para Aplicativos; na 1ª vez botão direito > Abrir.
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: out/Prompter-*-mac-arm64.dmg
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: out/Prompter-*-mac-x86_64.dmg
+      - name: DMGs (gh, com novas tentativas)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in out/Prompter-*.dmg; do
+            for i in 1 2 3 4; do gh release upload "${GITHUB_REF_NAME}" "$f" --clobber --repo "${GITHUB_REPOSITORY}" && break || { echo "tentativa $i falhou: $f"; sleep 30; }; done
+          done
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name'

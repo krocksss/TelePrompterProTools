@@ -102,11 +102,14 @@ begin
   Result := Exec('cmd.exe', '/c tasklist /FI "IMAGENAME eq Prompter.exe" | find /I "Prompter.exe" >nul', '', SW_HIDE, ewWaitUntilTerminated, R) and (R = 0);
 end;
 
-// fecha o Prompter (e filhos) por conta propria, espera sumir e so entao copia os arquivos
+// fecha o Prompter por conta propria, espera sumir e so entao copia os arquivos.
+// SEM /T: o Pro Tools e este proprio instalador (quando o Prompter baixa e roda a atualizacao) sao FILHOS do
+// Prompter.exe; matar a arvore fechava o Pro Tools e o instalador morria no meio (2.0.16 -> 2.0.17 travou assim).
+// O trabalhador do demucs tambem se chama Prompter.exe, entao /IM ja pega ele.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var R, i: Integer;
 begin
-  Exec('taskkill', '/F /T /IM Prompter.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
+  Exec('taskkill', '/F /IM Prompter.exe', '', SW_HIDE, ewWaitUntilTerminated, R);
   for i := 1 to 30 do begin
     if not PrompterRunning then break;
     Sleep(500);

@@ -60,8 +60,46 @@ jobs:
           mkdir -p build/work/icon.iconset
           for n in 16 32 64 128 256 512; do sips -z $n $n static/prompter.png --out build/work/icon.iconset/icon_${n}x${n}.png >/dev/null; done
           iconutil -c icns build/work/icon.iconset -o static/prompter.icns || true
+      # Assinatura Apple (opcional): so acontece se os segredos MAC_CERT_P12 etc. existirem no repositorio.
+      # Sem eles o .dmg sai ad-hoc (botao direito > Abrir), como sempre.
+      - name: Certificado Developer ID
+        id: cert
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        if: env.MAC_CERT_P12 != ''
+        run: |
+          echo "$MAC_CERT_P12" | base64 --decode > /tmp/cert.p12
+          KC=/tmp/build.keychain-db; KCPW=$(uuidgen)
+          security create-keychain -p "$KCPW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KCPW" "$KC"
+          security import /tmp/cert.p12 -k "$KC" -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KCPW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          ID=$(security find-identity -v -p codesigning "$KC" | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)".*/\1/')
+          if [ -z "$ID" ]; then echo "nenhuma identidade 'Developer ID Application' no .p12"; exit 1; fi
+          echo "identidade: $ID"
+          echo "identity=$ID" >> "$GITHUB_OUTPUT"
+          rm -f /tmp/cert.p12
       - name: DMG
+        env:
+          SIGN_IDENTITY: ${{ steps.cert.outputs.identity }}
         run: bash build/mac/build.sh
+      - name: Notarização
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        if: steps.cert.outputs.identity != '' && env.ASC_KEY_ID != ''
+        run: |
+          echo "$ASC_KEY_P8" > /tmp/asc.p8
+          DMG=$(ls dist/Prompter-*.dmg | head -1)
+          xcrun notarytool submit "$DMG" --key /tmp/asc.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait --timeout 30m | tee /tmp/notary.txt
+          grep -q "status: Accepted" /tmp/notary.txt || { ID=$(grep -m1 " id:" /tmp/notary.txt | awk '{print $2}'); xcrun notarytool log "$ID" --key /tmp/asc.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"; exit 1; }
+          xcrun stapler staple "$DMG"
+          spctl -a -t open --context context:primary-signature -v "$DMG" || true
+          rm -f /tmp/asc.p8
       - uses: actions/upload-artifact@v4
         with:
           name: mac-${{ matrix.os }}
@@ -85,7 +123,7 @@ jobs:
           NOTES="**Prompter ${TAG#v}** · teleprompter sincronizado com o Pro Tools, por [Marllon Machado](https://github.com/krocksss)
 
           - **Windows**: PrompterSetup-${TAG#v}.exe (inclui o loopMIDI). Baixar, executar, Instalar.
-          - **macOS**: Prompter-${TAG#v}-mac-arm64.dmg (Apple Silicon) ou -x86_64.dmg (Intel). Arraste para Aplicativos; na 1ª vez botão direito > Abrir.
+          - **macOS**: Prompter-${TAG#v}-mac-arm64.dmg (Apple Silicon) ou -x86_64.dmg (Intel). Arraste para Aplicativos. Se o macOS reclamar (versão sem assinatura), botão direito > Abrir.
 
           Problemas? https://www.instagram.com/marllon_sec/"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --title "Prompter ${TAG#v}" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"

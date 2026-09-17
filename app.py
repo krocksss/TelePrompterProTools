@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.9"
+VERSION = "2.0.10"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -104,16 +104,32 @@ def norm(s):
     return s
 
 
+def clean_env():
+    """Ambiente para processos EXTERNOS: sem a pasta do app no PATH e sem variaveis do PyInstaller.
+    (O bootloader poe a pasta _internal no PATH; o Pro Tools, aberto por nos, carregava MSVCP140.dll de la
+    e travava o arquivo, impedindo a atualizacao.)"""
+    env = dict(os.environ)
+    base = str(BASE).lower().rstrip("\\/")
+    exe_dir = str(Path(sys.executable).resolve().parent).lower().rstrip("\\/")
+    parts = [x for x in env.get("PATH", "").split(os.pathsep)
+             if x and x.lower().rstrip("\\/") not in (base, exe_dir) and not x.lower().startswith(base + os.sep)]
+    env["PATH"] = os.pathsep.join(parts)
+    for k in list(env):
+        if k.startswith("_MEIPASS") or k.startswith("_PYI_") or k in ("PYINSTALLER_RESET_ENVIRONMENT",):
+            env.pop(k, None)
+    return env
+
+
 def open_path(p):
-    """Abre pasta/arquivo/URL no programa padrao do sistema."""
+    """Abre pasta/arquivo/URL no programa padrao do sistema, com ambiente limpo."""
     p = str(p)
     try:
         if WIN:
-            os.startfile(p)
+            subprocess.Popen(["cmd", "/c", "start", "", p], env=clean_env(), creationflags=NOWIN, close_fds=True)
         elif MAC:
-            subprocess.Popen(["open", p])
+            subprocess.Popen(["open", p], env=clean_env())
         else:
-            subprocess.Popen(["xdg-open", p])
+            subprocess.Popen(["xdg-open", p], env=clean_env())
     except Exception as e:
         log("nao abriu", p, e)
 
@@ -180,10 +196,11 @@ def launch_protools():
         return False
     try:
         if MAC:
-            subprocess.Popen(["open", "-a", exe])
+            subprocess.Popen(["open", "-a", exe], env=clean_env())
         else:
-            subprocess.Popen([exe], cwd=str(Path(exe).parent))
-        log("abrindo o Pro Tools:", exe)
+            subprocess.Popen([exe], cwd=str(Path(exe).parent), env=clean_env(), close_fds=True,
+                             creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        log("abrindo o Pro Tools (ambiente limpo):", exe)
         return True
     except Exception as e:
         log("erro abrindo o Pro Tools:", e)
@@ -1351,7 +1368,7 @@ def install_update():
             urllib.request.urlretrieve(UPDATE["asset"], dst, reporthook=hook)
             UPDATE["pct"] = 100
             UPDATE["msg"] = "instalando: confirme o pedido de administrador do Windows; o Prompter reabre sozinho"
-            subprocess.Popen([str(dst), "/SILENT", "/NORESTART"], creationflags=NOWIN)
+            subprocess.Popen([str(dst), "/SILENT", "/NORESTART"], creationflags=NOWIN, env=clean_env(), close_fds=True)
             time.sleep(1)
             os._exit(0)
         else:
@@ -1895,7 +1912,7 @@ def open_monitor2():
     url = "http://localhost:%d" % CFG["porta"]
     if WIN:
         subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(BASE / "abrir-monitor2.ps1"), url],
-                         creationflags=NOWIN)
+                         creationflags=NOWIN, env=clean_env())
     else:
         webbrowser.open(url)
 
@@ -1914,11 +1931,11 @@ def tray(state):
             d.rectangle((16, y, 48, y + 4), fill=(235, 235, 240) if y == 32 else (110, 110, 120))
     url = "http://localhost:%d" % CFG["porta"]
     menu = pystray.Menu(
-        pystray.MenuItem("Abrir prompter", lambda: webbrowser.open(url), default=True),
+        pystray.MenuItem("Abrir prompter", lambda: open_path(url), default=True),
         pystray.MenuItem("Abrir no monitor 2 (tela cheia)", lambda: open_monitor2()),
-        pystray.MenuItem("Estúdio de letras", lambda: webbrowser.open(url + "/estudio")),
+        pystray.MenuItem("Músicas e letras", lambda: open_path(url + "/estudio")),
         pystray.MenuItem("Abrir o Pro Tools", lambda: threading.Thread(target=launch_protools, daemon=True).start()),
-        pystray.MenuItem("Configuração / primeiros passos", lambda: webbrowser.open(url + "/config")),
+        pystray.MenuItem("Configuração", lambda: open_path(url + "/config")),
         pystray.MenuItem("Pasta das músicas", lambda: (Path(CFG["pasta_musicas"]).mkdir(parents=True, exist_ok=True), open_path(CFG["pasta_musicas"]))),
         pystray.MenuItem("Sair", lambda icon: (icon.stop(), os._exit(0))),
     )
@@ -1936,7 +1953,7 @@ def main():
         # ja tem um Prompter rodando: so abre a tela (e o Pro Tools, se pedido)
         if CFG.get("abrir_protools", True):
             launch_protools()
-        webbrowser.open(url)
+        open_path(url)
         return
     log("=== Prompter %s iniciando (%s, %s) ===" % (VERSION, "instalado" if FROZEN else "fonte", sys.platform))
     with LIB.lock:   # musica que deu erro na ultima vez tenta de novo
@@ -1967,7 +1984,7 @@ def main():
         threading.Thread(target=launch_protools, daemon=True).start()
     if (CFG.get("abrir_navegador", True) or first) and "--sem-navegador" not in sys.argv:
         time.sleep(1.2)
-        webbrowser.open(url + ("/config" if first else ""))
+        open_path(url + ("/config" if first else ""))
     if "--sem-bandeja" in sys.argv:
         while True:
             time.sleep(3600)

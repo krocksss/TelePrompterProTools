@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.19"
+VERSION = "2.0.20"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -189,8 +189,75 @@ def protools_running():
         return port_open(31416)
 
 
+RUNTIME_DLLS = ("msvcp140.dll", "msvcp140_1.dll", "msvcp140_atomic_wait.dll", "vcruntime140.dll", "vcruntime140_1.dll",
+                "vcruntime140_threads.dll", "mfc140u.dll", "ucrtbase.dll", "concrt140.dll", "vcomp140.dll")
+
+
+def dll_users(paths):
+    """Windows: quais processos (pid, nome) mantem estes arquivos abertos (Restart Manager, sem precisar de admin)."""
+    if not WIN:
+        return {}
+    import ctypes
+    from ctypes import wintypes as w
+    rm = ctypes.windll.rstrtmgr
+
+    class RM_UNIQUE_PROCESS(ctypes.Structure):
+        _fields_ = [("dwProcessId", w.DWORD), ("ProcessStartTime", w.FILETIME)]
+
+    class RM_PROCESS_INFO(ctypes.Structure):
+        _fields_ = [("Process", RM_UNIQUE_PROCESS), ("ApplicationType", ctypes.c_int), ("AppStatus", w.ULONG), ("TSSessionId", w.DWORD),
+                    ("bRestartable", w.BOOL), ("strAppName", w.WCHAR * 256), ("strServiceShortName", w.WCHAR * 64)]
+    names = {}
+    try:
+        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True, creationflags=NOWIN).stdout
+        for line in out.splitlines():
+            parts = [x.strip('"') for x in line.split('","')]
+            if len(parts) > 1 and parts[1].isdigit():
+                names[int(parts[1])] = parts[0]
+    except Exception:
+        pass
+    users = {}
+    for p in paths:
+        h = w.DWORD()
+        key = ctypes.create_unicode_buffer(33)
+        if rm.RmStartSession(ctypes.byref(h), 0, key):
+            continue
+        try:
+            arr = (w.LPCWSTR * 1)(str(p))
+            if rm.RmRegisterResources(h, 1, arr, 0, None, 0, None):
+                continue
+            needed, n, reasons = w.UINT(), w.UINT(0), w.DWORD()
+            rm.RmGetList(h, ctypes.byref(needed), ctypes.byref(n), None, ctypes.byref(reasons))
+            if needed.value:
+                infos = (RM_PROCESS_INFO * needed.value)()
+                n = w.UINT(needed.value)
+                if rm.RmGetList(h, ctypes.byref(needed), ctypes.byref(n), infos, ctypes.byref(reasons)) == 0:
+                    pids = [infos[i].Process.dwProcessId for i in range(n.value)]
+                    users[Path(p).name] = sorted(set("%s(%d)" % (names.get(pid, "?"), pid) for pid in pids))
+        finally:
+            rm.RmEndSession(h)
+    return users
+
+
+def runtime_dll_report():
+    """Diagnostico: quem esta segurando as DLLs de runtime de _internal (o instalador nao consegue substitui-las)."""
+    if not (WIN and FROZEN):
+        return
+    try:
+        paths = [BASE / n for n in RUNTIME_DLLS if (BASE / n).exists()]
+        me = os.getpid()
+        users = {k: [u for u in v if "(%d)" % me not in u] for k, v in dll_users(paths).items()}
+        users = {k: v for k, v in users.items() if v}
+        log("DLLs de runtime de _internal em uso por outros processos:", users if users else "nenhuma (Pro Tools usa as proprias)")
+    except Exception as e:
+        log("diagnostico de DLLs falhou:", str(e)[:120])
+
+
 def launch_protools():
-    """Abre o Pro Tools se nao estiver aberto. Devolve True se abriu/ja estava."""
+    """Abre o Pro Tools se nao estiver aberto. Devolve True se abriu/ja estava.
+    Windows: pede ao Explorer (a shell) que abra o ProTools.exe. Assim o Pro Tools nasce filho da shell, com o
+    ambiente da shell, e nao herda NADA do Prompter: aberto direto por nos (mesmo com PATH limpo e cwd dele),
+    ele carregava msvcp140/mfc140u de _internal e travava a atualizacao (2.0.17 -> 2.0.19: 'DeleteFile falhou; codigo 5')."""
     if protools_running():
         return True
     exe = protools_exe()
@@ -201,9 +268,10 @@ def launch_protools():
         if MAC:
             subprocess.Popen(["open", "-a", exe], env=clean_env())
         else:
-            subprocess.Popen([exe], cwd=str(Path(exe).parent), env=clean_env(), close_fds=True,
-                             creationflags=0x00000008 | 0x00000200)   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-        log("abrindo o Pro Tools (ambiente limpo):", exe)
+            explorer = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "explorer.exe"
+            subprocess.Popen([str(explorer), exe], cwd=str(Path(exe).parent), env=clean_env(), close_fds=True, creationflags=NOWIN)
+            threading.Timer(45.0, runtime_dll_report).start()   # confere no log se o Pro Tools ficou com DLLs nossas
+        log("abrindo o Pro Tools (pela shell):", exe)
         return True
     except Exception as e:
         log("erro abrindo o Pro Tools:", e)

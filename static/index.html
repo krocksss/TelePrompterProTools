@@ -78,7 +78,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let view = null, song = null, songId = null, songCache = {};
-let base = 0, baseAt = 0, playing = false, lead = 0.3, manual = false, manualLine = null;
+let base = 0, baseAt = 0, playing = false, lead = 0.3, leadW = 0.25, manual = false, manualLine = null;
 let builtFor = null, wordEls = [], lineEls = [], curIdx = -2;
 
 async function loadSong(sid) {
@@ -133,10 +133,12 @@ function frame() {
   }
   for (let i = Math.max(0, idx); i <= Math.min(L.length - 1, idx + 2); i++) {
     for (const w of wordEls[i]) {
-      let p = 0;
+      // a palavra acende no ATAQUE (antecipado em leadW) com varredura rapida de 0,18 s,
+      // em vez de preencher ao longo da duracao (ficava branca so no fim da palavra)
+      let p = 0; const on = w.s - leadW;
       if (manual) p = i === idx ? 100 : 0;
-      else if (t >= w.e) p = 100;
-      else if (t > w.s) p = ((t - w.s) / Math.max(0.05, w.e - w.s)) * 100;
+      else if (t >= on + 0.18) p = 100;
+      else if (t > on) p = ((t - on) / 0.18) * 100;
       w.el.style.setProperty('--p', p.toFixed(1) + '%');
     }
   }
@@ -166,7 +168,7 @@ async function applyView(v) {
   $('manual').style.display = v.manual ? 'block' : 'none';
   $('song').textContent = v.song || '';
   $('aUpd').style.display = v.update ? '' : 'none'; if (v.update) $('aUpd').textContent = 'Versão ' + v.update + ' disponível';
-  lead = v.lead != null ? v.lead : 0.3; manual = !!v.manual; manualLine = v.manual ? v.line : null;
+  lead = v.lead != null ? v.lead : 0.3; leadW = v.lead_words != null ? v.lead_words : 0.25; manual = !!v.manual; manualLine = v.manual ? v.line : null;
   playing = !!v.playing;
   if (v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
 

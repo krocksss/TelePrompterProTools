@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.10"
+VERSION = "2.0.11"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -48,6 +48,7 @@ DEFAULT_CFG = {
     "modelo_whisper": "large-v3-turbo",
     "idioma": "pt",
     "avanco_segundos": 0.3,
+    "avanco_palavras": 0.25,       # karaoke: a palavra acende este tanto antes do tempo reconhecido
     "cpu_threads": max(2, min(8, (os.cpu_count() or 4) - 2)),
     "separar_vocal": True,
     "abrir_navegador": True,       # toda vez que abre: tela do prompter no navegador
@@ -1141,7 +1142,7 @@ class PTLink(threading.Thread):
         else:
             self.play()
 
-    def song_wav(self, song):
+    def song_wav(self, song, rate=44100):
         src = None
         for c in [song.get("source")] + list(song.get("originals") or []) + list(song.get("candidates") or []):
             if c and os.path.exists(c):
@@ -1149,17 +1150,26 @@ class PTLink(threading.Thread):
                 break
         if not src:
             return None
-        wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ".wav")
+        wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ("_%dk" % (rate // 1000) if rate != 44100 else "") + ".wav")
         if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(src):
             wav.parent.mkdir(exist_ok=True)
-            to_wav(src, wav)
+            to_wav(src, wav, rate=rate)
         return wav
+
+    def session_rate(self):
+        try:
+            sr = int(self.engine.session_sample_rate())
+            return sr if sr in (44100, 48000, 88200, 96000, 176400, 192000) else 44100
+        except Exception:
+            return 44100
 
     def import_into_session(self, song):
         """Coloca o audio da musica na sessao ABERTA do Pro Tools: faixa nova, no 0:00 (convertido para WAV)."""
         import ptsl.PTSL_pb2 as pt
         from ptsl import ops
-        wav = self.song_wav(song)
+        with self.lock:
+            sr = self.session_rate()   # converte para a taxa da sessao: copiar 44.1k numa sessao 48k toca 9% mais rapido
+        wav = self.song_wav(song, sr)
         if wav is None:
             return {"ok": False, "msg": "a música não tem arquivo de áudio"}
         with self.lock:
@@ -1177,8 +1187,8 @@ class PTLink(threading.Thread):
             if norm(name) != norm(song["name"]):
                 song["session_alias"] = name
         LIB.save()
-        log("audio importado na sessao aberta:", name)
-        return {"ok": True, "session": name, "msg": "música colocada na faixa 1 da sessão \"%s\"" % name}
+        log("audio importado na sessao aberta:", name, "a", sr, "Hz")
+        return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
 
     def make_session(self, song):
         """Cria (ou abre) a sessao do Pro Tools com o nome da musica e importa o audio no 0:00, numa faixa nova.
@@ -1411,6 +1421,7 @@ def current_view(state):
         "line": line_idx, "manual": state.manual_line is not None, "forced": state.forced_song,
         "n_lines": len(song.get("lines") or []) if song else 0,
         "lead": float(CFG["avanco_segundos"]),
+        "lead_words": float(CFG.get("avanco_palavras", 0.25)),
         "progresso": song.get("progresso") if song else None,
         "session_audio_n": state.session_audio_n,
         "update": UPDATE["latest"] if update_available() else None,
@@ -1822,7 +1833,7 @@ def run_web(state, transcriber, ptlink):
                     s["offset"] = round(state.seconds_now() - ln["t"], 2)
                 LIB.save()
         elif act == "config":
-            for k in ("pasta_musicas", "idioma", "modelo_whisper", "avanco_segundos", "separar_vocal", "sessao_auto",
+            for k in ("pasta_musicas", "idioma", "modelo_whisper", "avanco_segundos", "avanco_palavras", "separar_vocal", "sessao_auto",
                       "abrir_navegador", "abrir_protools", "checar_atualizacao"):
                 if k in body:
                     CFG[k] = body[k]

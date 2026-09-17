@@ -111,6 +111,7 @@
           <option value="pt">português</option><option value="en">inglês</option><option value="es">espanhol</option><option value="">detectar</option>
         </select>
         <label class="check"><input type="checkbox" id="cSep"> isolar a voz antes (mais preciso)</label>
+        <span class="check">antecipar palavras (s): <input type="text" id="cLeadW" style="width:60px" title="quanto antes do tempo reconhecido a palavra acende no teleprompter"></span>
         <button onclick="post({action:'download_models'})">Baixar modelos agora</button>
       </div>
       <div class="row">
@@ -215,14 +216,15 @@ function render() {
 async function loadCfg() {
   const r = await fetch('/api/songs'); const c = (await r.json()).config;
   $('cSessAuto').checked = !!c.sessao_auto; $('cSep').checked = !!c.separar_vocal; $('cIdioma').value = c.idioma || ''; $('cModelo').value = c.modelo_whisper;
-  $('cPT').checked = !!c.abrir_protools; $('cNav').checked = !!c.abrir_navegador; $('cUpd').checked = !!c.checar_atualizacao;
+  $('cPT').checked = !!c.abrir_protools; $('cNav').checked = !!c.abrir_navegador; $('cUpd').checked = !!c.checar_atualizacao; $('cLeadW').value = c.avanco_palavras != null ? c.avanco_palavras : 0.25;
 }
 function saveCfg() {
   dirty = false;
   control({action:'config', pasta_musicas: $('cPasta').value, modelo_whisper: $('cModelo').value, idioma: $('cIdioma').value, separar_vocal: $('cSep').checked,
-           sessao_auto: $('cSessAuto').checked, abrir_protools: $('cPT').checked, abrir_navegador: $('cNav').checked, checar_atualizacao: $('cUpd').checked}).then(load);
+           sessao_auto: $('cSessAuto').checked, abrir_protools: $('cPT').checked, abrir_navegador: $('cNav').checked, checar_atualizacao: $('cUpd').checked,
+           avanco_palavras: parseFloat(String($('cLeadW').value).replace(',', '.')) || 0}).then(load);
 }
-['cModelo','cIdioma','cSep','cSessAuto','cPT','cNav','cUpd'].forEach(id => $(id).addEventListener('change', saveCfg));
+['cModelo','cIdioma','cSep','cSessAuto','cPT','cNav','cUpd','cLeadW'].forEach(id => $(id).addEventListener('change', saveCfg));
 $('cPasta').addEventListener('input', () => dirty = true);
 $('cPasta').addEventListener('change', saveCfg);
 $('cAuto').addEventListener('change', () => post({action:'autostart', on: $('cAuto').checked}));

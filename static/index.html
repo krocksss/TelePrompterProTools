@@ -45,6 +45,9 @@
   #credit { position:fixed; right:22px; bottom:16px; font-size:12px; color:var(--dim); z-index:3; opacity:0; transition:opacity .3s; }
   body.show-cursor #credit { opacity:1; } #credit a { color:var(--muted); text-decoration:none; }
   #credit img { width:18px; height:18px; border-radius:50%; vertical-align:middle; margin-right:5px; }
+  #contact { position:fixed; left:0; right:0; bottom:0; text-align:center; font-size:12px; color:var(--dim); z-index:3; padding:6px 0; opacity:0; transition:opacity .3s; background:linear-gradient(transparent, var(--bg)); }
+  body.show-cursor #contact { opacity:1; } #contact a { color:var(--muted); text-decoration:underline; text-underline-offset:3px; }
+  #help { bottom:34px; } #credit { bottom:34px; }
   @media (prefers-reduced-motion: reduce) { #list { transition:none; } .ln { transition:none; } }
 </style>
 </head>
@@ -70,6 +73,7 @@
 <div id="msg"></div>
 <div id="manual">Modo manual (setas). Tecle A para voltar ao automático.</div>
 <div id="help">F tela cheia · espaço play/stop no Pro Tools · setas linha na mão · A automático</div>
+<div id="contact">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></div>
 <div id="credit"><a href="https://github.com/krocksss" target="_blank"><img src="/static/autor.png" alt="">Marllon Machado · github.com/krocksss</a></div>
 <script>
 const $ = id => document.getElementById(id);

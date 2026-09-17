@@ -48,7 +48,7 @@
   header .credit { display:flex; align-items:center; gap:7px; color:var(--faint); font-size:12px; }
   header .credit img { width:20px; height:20px; border-radius:50%; }
 
-  main { display:grid; grid-template-columns:300px 1fr; min-height:calc(100dvh - 60px); }
+  main { display:grid; grid-template-columns:300px 1fr; min-height:calc(100dvh - 60px - 80px); }
   aside { border-right:1px solid var(--line); padding:18px 16px; display:flex; flex-direction:column; gap:14px; }
   section#editor { padding:22px 28px 60px; min-width:0; }
   @media (max-width:900px) { main { grid-template-columns:1fr; } aside { border-right:0; border-bottom:1px solid var(--line); } section#editor { padding:18px 16px 60px; } header nav { display:none; } }
@@ -137,6 +137,9 @@
   .hint { color:var(--muted); font-size:13px; }
   .box { margin-top:12px; padding:14px; border-radius:var(--r); background:var(--panel); border:1px solid var(--line); }
   textarea { width:100%; min-height:200px; }
+  footer.contact { margin-top:40px; padding:18px 22px 26px; border-top:1px solid var(--line); color:var(--faint); font-size:13px; text-align:center; }
+  footer.contact a { color:var(--muted); text-decoration:underline; text-underline-offset:3px; }
+  footer.contact a:hover { color:var(--fg); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
 </style>
 </head>
@@ -160,6 +163,7 @@
   </aside>
   <section id="editor"></section>
 </main>
+<footer class="contact">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></footer>
 <script>
 const $ = id => document.getElementById(id);
 let songs = {}, cfg = {}, sel = null, view = null, song = null;

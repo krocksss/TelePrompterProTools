@@ -45,6 +45,9 @@
   .about { display:flex; align-items:center; gap:14px; }
   .about img { width:52px; height:52px; border-radius:50%; }
   .about .who { color:var(--muted); font-size:14px; }
+  footer.contact { margin-top:40px; margin-left:-22px; margin-right:-22px; padding:18px 22px 26px; border-top:1px solid var(--line); color:var(--faint); font-size:13px; text-align:center; }
+  footer.contact a { color:var(--muted); text-decoration:underline; text-underline-offset:3px; }
+  footer.contact a:hover { color:var(--fg); }
   @media (max-width:700px) { header nav { display:none; } .sec { grid-template-columns:1fr; } .sec .n { display:none; } }
 </style>
 </head>
@@ -170,6 +173,7 @@
       <div class="msg" id="updMsg"></div>
     </div>
   </div>
+<footer class="contact" style="margin:40px 0 0">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></footer>
 </main>
 <script>
 const $ = id => document.getElementById(id);

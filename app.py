@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.5"
+VERSION = "2.0.6"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"

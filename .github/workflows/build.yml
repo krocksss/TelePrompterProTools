@@ -15,7 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
@@ -25,7 +26,9 @@ jobs:
         shell: pwsh
         run: .\build\build.ps1
       - uses: actions/upload-artifact@v4
-        with: { name: windows, path: dist/PrompterSetup-*.exe }
+        with:
+          name: windows
+          path: dist/PrompterSetup-*.exe
 
   mac:
     strategy:
@@ -35,7 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with:
+          python-version: "3.12"
       - name: Dependências
         run: |
           python -m pip install --upgrade pip
@@ -49,7 +53,9 @@ jobs:
       - name: DMG
         run: bash build/mac/build.sh
       - uses: actions/upload-artifact@v4
-        with: { name: mac-${{ matrix.os }}, path: dist/Prompter-*.dmg }
+        with:
+          name: mac-${{ matrix.os }}
+          path: dist/Prompter-*.dmg
 
   release:
     needs: [windows, mac]
@@ -57,7 +63,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/download-artifact@v4
-        with: { path: out, merge-multiple: true }
+        with:
+          path: out
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
           files: out/*

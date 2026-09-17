@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -218,6 +218,9 @@ class Library:
             return None
         n = norm(session_name)
         with self.lock:
+            for sid, s in self.songs.items():
+                if s.get("session_alias") and norm(s["session_alias"]) == n:
+                    return sid
             for sid, s in self.songs.items():
                 if norm(s["name"]) == n:
                     return sid
@@ -1455,8 +1458,65 @@ def run_web(state, transcriber, ptlink):
                 s["offset"] = float(body["offset"])
             if "name" in body and str(body["name"]).strip():
                 s["name"] = str(body["name"]).strip()
+            if "session_alias" in body:
+                s["session_alias"] = (str(body["session_alias"]).strip() or None)
         LIB.save()
         return web.json_response({"ok": True, "song": s})
+
+    async def api_upload(req):
+        """Musica arrastada/escolhida no estudio: salva em pasta_musicas/<nome>/, entra na biblioteca,
+        fica vinculada a sessao aberta no Pro Tools e vai para a fila de transcricao."""
+        reader = await req.multipart()
+        saved = []
+        link = None
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name == "session_alias":
+                link = (await part.text()).strip() or None
+                continue
+            if part.name != "file" or not part.filename:
+                continue
+            fname = os.path.basename(part.filename)
+            if Path(fname).suffix.lower() not in AUDIO_EXT:
+                continue
+            stem = Path(fname).stem
+            folder = Path(CFG["pasta_musicas"]) / stem
+            folder.mkdir(parents=True, exist_ok=True)
+            dst = folder / fname
+            tmp = folder / (fname + ".enviando")
+            with open(tmp, "wb") as f:   # grava num temporario: o arquivo escolhido pode SER o proprio destino
+                while True:
+                    chunk = await part.read_chunk(1024 * 1024)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+            if dst.exists() and dst.stat().st_size == tmp.stat().st_size:
+                tmp.unlink()   # mesmo arquivo, ja esta na pasta
+            else:
+                os.replace(tmp, dst)
+            saved.append((stem, dst))
+        if not saved:
+            return web.json_response({"ok": False, "erro": "nenhum arquivo de áudio recebido"}, status=400)
+        sids = []
+        for stem, dst in saved:
+            register({stem: {"name": stem, "folder": str(dst.parent), "originals": [str(dst)], "session_audio": []}})
+            sid = norm(stem).replace(" ", "-") or stem
+            s = LIB.get(sid)
+            with LIB.lock:
+                if s is not None:
+                    s["status"] = "pendente"
+                    s["erro"] = None
+                    s["fonte_forcada"] = str(dst)
+                    alias = link if link is not None else state.session
+                    if alias and norm(alias) != norm(stem) and norm(alias) not in ("untitled", "sem titulo", "new session"):
+                        s["session_alias"] = alias
+            sids.append(sid)
+            log("musica recebida no estudio:", fname if False else dst.name, "-> sessao", link or state.session)
+        LIB.save()
+        transcriber.wake.set()
+        return web.json_response({"ok": True, "song_ids": sids, "song_id": sids[0]})
 
     async def api_song_retry(req):
         """Retranscreve. body.source = caminho de UMA faixa (arquivo de audio) para transcrever so ela."""
@@ -1586,7 +1646,7 @@ def run_web(state, transcriber, ptlink):
             threading.Thread(target=install_update, daemon=True).start()
         return web.json_response(setup_status(state, transcriber, ptlink))
 
-    app = web.Application(client_max_size=50 * 1024 * 1024)
+    app = web.Application(client_max_size=2 * 1024 * 1024 * 1024)
     app.router.add_get("/", page("index.html"))
     app.router.add_get("/editar", page("editar.html"))
     app.router.add_get("/estudio", page("editar.html"))
@@ -1599,6 +1659,7 @@ def run_web(state, transcriber, ptlink):
     app.router.add_put("/api/song/{sid}", api_song_put)
     app.router.add_post("/api/song/{sid}/retry", api_song_retry)
     app.router.add_delete("/api/song/{sid}", api_song_delete)
+    app.router.add_post("/api/upload", api_upload)
     app.router.add_post("/api/control", api_control)
     app.router.add_post("/api/transport", api_transport)
     app.router.add_get("/api/setup", api_setup)
@@ -1671,7 +1732,8 @@ def main():
     MTCReader(state).start()
     PTWatcher(state).start()
     link.start()
-    tr.start()
+    if "--sem-transcricao" not in sys.argv:
+        tr.start()
     threading.Thread(target=run_web, args=(state, tr, link), daemon=True, name="web").start()
     threading.Thread(target=update_loop, daemon=True, name="update").start()
     first = not (DATA / ".welcome").exists()

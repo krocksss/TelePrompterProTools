@@ -63,6 +63,13 @@
   .warn { color:var(--warn); }
   details { margin-top:14px; } summary { cursor:pointer; color:var(--dim); }
   .toolbar { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; align-items:center; }
+  #drop { border:2px dashed #3a3a44; border-radius:12px; padding:18px 12px; text-align:center; color:var(--dim); cursor:pointer; margin-bottom:12px; transition:border-color .2s, background .2s; }
+  #drop b { color:var(--fg); display:block; font-size:15px; margin-bottom:4px; }
+  #drop:hover, body.dragging #drop { border-color:var(--ok); background:#15201a; color:var(--fg); }
+  body.dragging::after { content:"Solte a música aqui"; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:34px; font-weight:600; color:var(--ok); background:rgba(0,0,0,.72); z-index:50; pointer-events:none; }
+  #upBar { height:5px; background:#26262c; border-radius:3px; margin-top:8px; overflow:hidden; display:none; } #upBar i { display:block; height:100%; background:var(--acc); width:0; }
+  #bigDrop { margin-top:14px; padding:40px 20px; }
+  .link { font-size:13px; color:var(--dim); } .link select { background:#111114; border:1px solid var(--line); color:var(--fg); border-radius:6px; padding:4px 8px; }
 </style>
 </head>
 <body>
@@ -79,6 +86,8 @@
       <strong style="flex:1">Músicas</strong>
       <button onclick="control({action:'rescan'}).then(loadSongs)" title="reler a pasta e a sessão aberta">reler</button>
     </div>
+    <div id="drop" onclick="$('fileIn').click()"><b>＋ Adicionar música</b>arraste o MP3/WAV aqui ou clique para escolher<div id="upBar"><i></i></div></div>
+    <input type="file" id="fileIn" accept="audio/*,.mp3,.wav,.m4a,.flac,.aif,.aiff,.ogg" multiple style="display:none">
     <div class="songs" id="songs"></div>
     <div class="hint" style="margin-top:12px">Abra a sessão no Pro Tools e ela entra aqui sozinha. Ou coloque o MP3 na <a href="#" onclick="fetch('/api/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{\"action\":\"open_folder\"}'});return false">pasta das músicas</a>.</div>
     <details>
@@ -92,7 +101,10 @@
     </details>
   </section>
   <section class="card" id="editor">
-    <div class="hint">Escolha uma música à esquerda.</div>
+    <div class="hint">Escolha uma música à esquerda, ou solte o arquivo da música em qualquer lugar desta página.</div>
+    <div id="bigDrop" class="hint" style="border:2px dashed #3a3a44;border-radius:12px;text-align:center;cursor:pointer" onclick="$('fileIn').click()">
+      <div style="font-size:22px;color:var(--fg);margin-bottom:6px">Arraste a música aqui</div>ou clique para procurar no computador.<br>Ela é transcrita em segundo plano; quando ficar pronta, aperte ▶ e o Pro Tools toca junto.
+    </div>
   </section>
 </main>
 <script>
@@ -148,11 +160,13 @@ function renderEditor() {
     <div class="meta" style="margin-top:6px">
       <span title="arquivo de áudio usado">origem: ${esc(s.source ? s.source.split(/[\\/]/).pop() : (s.candidates && s.candidates[0] ? s.candidates[0].split(/[\\/]/).pop() : '—'))}</span>
       <span>ajuste da sessão (s): <input id="edOffset" value="${s.offset||0}" style="width:64px" onchange="saveMeta()" title="quanto o áudio está deslocado dentro da sessão do Pro Tools"></span>
+      <span class="link" id="linkBox"></span>
       <span id="sessWarn" class="warn"></span>
       ${s.erro ? `<span style="color:var(--bad)">${esc(s.erro)}</span>` : ''}
     </div>
     <div id="prog" style="display:${s.status==='transcrevendo'||s.status==='pendente'?'block':'none'}">
       <div id="progTxt">${s.status==='pendente' ? 'na fila para transcrever' : 'transcrevendo…'}</div><div class="bar"><i id="progBar"></i></div>
+      <div class="hint" style="margin-top:6px">Quando terminar, a letra aparece abaixo com o tempo de cada verso. Aí é só apertar ▶: com o botão 🔗 aceso o Pro Tools toca junto.</div>
     </div>
     <div id="transport">
       <button id="bPlay" onclick="togglePlay()" title="espaço">▶</button>
@@ -189,7 +203,36 @@ function renderEditor() {
       <div class="meta" style="margin-top:6px">${s.words_n || (s.words && s.words.length) ? '' : 'sem transcrição ainda: os tempos ficam espaçados por igual até você marcar com Enter. '} <button class="primary" onclick="applyText()">alinhar com o áudio</button> <button onclick="$('pasteBox').style.display='none'">fechar</button></div>
     </div>
     <div class="lines" id="lines"></div>`;
-  renderRows(); renderTransport(); drawWave();
+  renderRows(); renderTransport(); drawWave(); renderLink();
+}
+function renderLink() {
+  const el = $('linkBox'); if (!el || !song) return;
+  const sess = view && view.session; const alias = song.session_alias;
+  const same = sess && (norm(sess) === norm(song.name) || (alias && norm(alias) === norm(sess)));
+  if (same) { el.innerHTML = '🔗 vinculada à sessão <b>' + esc(sess) + '</b>'; return; }
+  if (sess) el.innerHTML = 'sessão aberta no Pro Tools: <b>' + esc(sess) + '</b> <button onclick="linkTo(' + JSON.stringify(sess).replace(/"/g,'&quot;') + ')" title="quando esta sessão estiver aberta, o prompter mostra esta música">vincular esta música a ela</button>' + (alias ? ' <span class="hint">(hoje vinculada a "' + esc(alias) + '")</span>' : '');
+  else el.innerHTML = alias ? 'vinculada à sessão "' + esc(alias) + '"' : '';
+}
+function norm(s) { return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim(); }
+async function linkTo(sess) { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_alias: sess})}); await loadSong(); }
+
+// ---- arrastar / escolher arquivo
+let dragN = 0;
+document.addEventListener('dragenter', e => { if ([...e.dataTransfer.types].includes('Files')) { dragN++; document.body.classList.add('dragging'); } });
+document.addEventListener('dragleave', e => { dragN = Math.max(0, dragN - 1); if (!dragN) document.body.classList.remove('dragging'); });
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', e => { e.preventDefault(); dragN = 0; document.body.classList.remove('dragging'); if (e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+$('fileIn').addEventListener('change', e => { if (e.target.files.length) upload(e.target.files); e.target.value = ''; });
+function upload(files) {
+  const fd = new FormData();
+  [...files].forEach(f => fd.append('file', f, f.name));
+  if (view && view.session) fd.append('session_alias', view.session);
+  const bar = $('upBar'); bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
+  const x = new XMLHttpRequest(); x.open('POST', '/api/upload');
+  x.upload.onprogress = ev => { if (ev.lengthComputable) bar.firstElementChild.style.width = Math.round(ev.loaded / ev.total * 100) + '%'; };
+  x.onload = async () => { bar.style.display = 'none'; try { const j = JSON.parse(x.responseText); if (j.ok) { await loadSongs(); await select(j.song_id); } else alert(j.erro || 'falha no envio'); } catch (e) { alert('falha no envio'); } };
+  x.onerror = () => { bar.style.display = 'none'; alert('falha no envio'); };
+  x.send(fd);
 }
 function renderRows() {
   $('lines').innerHTML = rows.map((l, i) => `<div class="row" data-i="${i}">
@@ -396,6 +439,7 @@ function connect() {
 connect();
 loadSongs().then(async () => {   // ?transcrever=1&song=<id>: abre a música (ou a que está no Pro Tools) já no seletor de faixa
   const q = new URLSearchParams(location.search);
+  if (q.get('adicionar')) $('fileIn').click();
   if (q.get('transcrever')) {
     let id = q.get('song'); if (!id) { try { const v = await (await fetch('/api/state')).json(); id = v.song_id; } catch (e) {} }
     if (!id) { const ids = Object.keys(songs); id = ids[0]; }

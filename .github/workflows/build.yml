@@ -95,7 +95,8 @@ jobs:
         run: |
           echo "$ASC_KEY_P8" > /tmp/asc.p8
           DMG=$(ls dist/Prompter-*.dmg | head -1)
-          xcrun notarytool submit "$DMG" --key /tmp/asc.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait --timeout 30m | tee /tmp/notary.txt
+          # 1a notarizacao de uma conta demora 1 h+ (analise estendida da Apple); depois cai p/ minutos. Repo publico = minutos gratis.
+          xcrun notarytool submit "$DMG" --key /tmp/asc.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" --wait --timeout 3h | tee /tmp/notary.txt
           grep -q "status: Accepted" /tmp/notary.txt || { ID=$(grep -m1 " id:" /tmp/notary.txt | awk '{print $2}'); xcrun notarytool log "$ID" --key /tmp/asc.p8 --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID"; exit 1; }
           xcrun stapler staple "$DMG"
           spctl -a -t open --context context:primary-signature -v "$DMG" || true

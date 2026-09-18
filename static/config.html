@@ -41,6 +41,12 @@
   .led.ok { background:var(--accent); box-shadow:0 0 8px rgba(62,207,142,.5); } .led.warn { background:var(--warn); }
   ul.steps { margin:10px 0 0; padding-left:18px; color:var(--muted); font-size:14px; } ul.steps b { color:var(--fg); }
   .msg { font-size:13px; color:var(--warn); margin-top:8px; }
+  .msg.bad { color:var(--bad); } .msg.ok { color:var(--muted); } .msg b { color:var(--fg); font-weight:600; }
+  .msg .est-bar { height:4px; background:var(--line); border-radius:2px; margin-top:6px; max-width:360px; overflow:hidden; }
+  .msg .est-bar i { display:block; height:100%; width:0; background:var(--warn); border-radius:2px; transition:width .5s; }
+  .msg .est-bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  .msg .est-pct { font-size:12px; color:var(--muted); margin-top:3px; font-variant-numeric:tabular-nums; }
+  @keyframes slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
   kbd { font:12px/1 var(--font); background:var(--panel-2); border:1px solid var(--line-2); border-radius:6px; padding:2px 6px; color:var(--muted); }
   .about { display:flex; align-items:center; gap:14px; }
   .about img { width:52px; height:52px; border-radius:50%; }
@@ -177,6 +183,7 @@
   </div>
 <footer class="contact" style="margin:40px 0 0">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></footer>
 </main>
+<script src="/static/estados.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let st = null, dirty = false;
@@ -196,7 +203,8 @@ function render() {
   $('stSongs').textContent = st.n_songs + (st.n_songs === 1 ? ' música' : ' músicas'); sec('s2', st.n_songs ? 'ok' : '');
   if (!dirty) { $('cPasta').value = st.pasta_musicas; $('cModelo').value = st.whisper_model; }
   led('dWh', st.whisper_cached); led('dDm', st.demucs_cached);
-  const sm = $('stModel'); sm.textContent = st.transcribing ? 'transcrevendo' : (st.whisper_cached ? 'modelo pronto' : 'baixa na primeira música'); sm.className = 'st ' + (st.whisper_cached ? 'ok' : 'warn'); sec('s3', st.whisper_cached ? 'ok' : 'warn');
+  const tp = st.transcribing_progresso;
+  const sm = $('stModel'); sm.textContent = st.transcribing ? (tp && tp.fase ? estadoDe(tp.fase, ctxTranscricao(tp)).curto : 'transcrevendo') : (st.whisper_cached ? 'modelo pronto' : 'baixa na primeira música'); sm.className = 'st ' + (st.whisper_cached ? 'ok' : 'warn'); sec('s3', st.whisper_cached ? 'ok' : 'warn');
   led('dLoop', st.loopmidi_installed); led('dPort', st.midi_port_ok, st.midi_ports.length > 0); led('dMtc', st.mtc_live, st.mtc_seen);
   const sx = $('stMtc');
   if (st.mtc_live) { sx.textContent = 'timecode ao vivo'; sx.className = 'st ok'; sec('s4', 'ok'); }
@@ -209,10 +217,13 @@ function render() {
   $('loopMsg').textContent = st.loopmidi_msg || '';
   $('cAuto').checked = st.autostart; $('tVer2').textContent = st.version;
   const u = st.update || {}; const su = $('stUpd');
-  if (u.available) { su.textContent = 'versão ' + u.latest + ' disponível'; su.className = 'st warn'; $('bUpd').style.display = ''; $('bUpd').disabled = u.busy; $('bUpd').textContent = u.busy ? (u.pct != null && u.pct < 100 ? 'baixando ' + u.pct + '%' : 'instalando') : 'Baixar e instalar ' + u.latest; sec('cardUpd', 'warn'); }
+  const ue = u.fase ? estadoDe(u.fase, {pct: u.pct, versao: u.latest, mb: u.mb, erro: u.msg}) : null;   // upd_baixando | upd_instalando | upd_erro | upd_sem_resposta
+  if (u.available) { su.textContent = 'versão ' + u.latest + ' disponível'; su.className = 'st warn'; $('bUpd').style.display = ''; $('bUpd').disabled = u.busy; $('bUpd').textContent = u.busy ? (ue ? ue.curto : (u.pct != null && u.pct < 100 ? 'baixando ' + u.pct + '%' : 'instalando')) : 'Baixar e instalar ' + u.latest; sec('cardUpd', 'warn'); }
   else if (u.checked && u.latest) { su.textContent = 'atualizado'; su.className = 'st ok'; $('bUpd').style.display = 'none'; sec('cardUpd', 'ok'); }
   else { su.textContent = u.msg ? 'sem resposta do GitHub' : 'não verificado'; su.className = 'st'; sec('cardUpd', ''); }
-  $('updMsg').textContent = u.msg || (u.available && u.notes ? u.notes : '');
+  const um = $('updMsg');
+  if (ue) { um.className = 'msg ' + (ue.tipo === 'erro' ? 'bad' : ''); um.innerHTML = '<b>' + ue.titulo + '.</b> ' + ue.sub + barraHTML(ue); }
+  else { um.className = 'msg' + (u.available && u.notes && !u.msg ? ' ok' : ''); um.textContent = u.msg || (u.available && u.notes ? u.notes : ''); }
 }
 async function loadCfg() {
   const r = await fetch('/api/songs'); const c = (await r.json()).config;

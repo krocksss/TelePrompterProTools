@@ -32,6 +32,31 @@
   #msg .a { margin-top:1.6em; display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   #msg .a a { display:inline-block; padding:12px 20px; border-radius:var(--r); background:var(--accent); color:#06261a; font-weight:600; text-decoration:none; font-size:clamp(14px, 1.3vw, 20px); }
   #msg .a a.q { background:#1b1f23; color:var(--fg); border:1px solid #323940; }
+  /* mensagens de estado (static/estados.js): cada situacao com icone, rotulo da area, titulo, subtitulo e barra */
+  #msg .card { display:flex; flex-direction:column; align-items:center; max-width:960px; margin:0 auto; animation:rise .35s cubic-bezier(.16,1,.3,1); }
+  #msg .ico { position:relative; width:clamp(56px, 6vw, 84px); height:clamp(56px, 6vw, 84px); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:clamp(24px, 2.8vw, 40px); background:#1b1f23; color:var(--muted); margin-bottom:1.1em; }
+  #msg .ico.espera, #msg .ico.progresso, #toast .ico.espera, #toast .ico.progresso { color:var(--warn); background:#2a2416; }
+  #msg .ico.erro, #toast .ico.erro { color:var(--bad); background:#3a2422; }
+  #msg .ico.ok, #toast .ico.ok { color:var(--accent); background:#173026; }
+  #msg .ico.espera::after, #toast .ico.espera::after { content:""; position:absolute; inset:-5px; border-radius:50%; border:2px solid transparent; border-top-color:var(--warn); animation:spin 1.1s linear infinite; }
+  #msg .k { font-size:clamp(11px, .9vw, 14px); letter-spacing:.22em; text-transform:uppercase; color:var(--dim); margin-bottom:.7em; }
+  #msg .song { margin-top:1.2em; color:var(--dim); font-size:clamp(13px, 1.2vw, 18px); }
+  .est-bar { width:min(520px, 70vw); height:6px; background:#1b1f23; border-radius:3px; overflow:hidden; margin-top:1.4em; }
+  .est-bar i { display:block; height:100%; width:0; background:var(--warn); border-radius:3px; transition:width .5s ease; }
+  .est-bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  .est-pct { margin-top:.5em; font-size:clamp(12px, 1.1vw, 16px); color:var(--muted); font-variant-numeric:tabular-nums; }
+  #toast { position:fixed; left:50%; top:60px; transform:translateX(-50%); z-index:5; display:none; align-items:center; gap:12px; padding:9px 18px 9px 10px; border-radius:999px; background:rgba(27,31,35,.96); border:1px solid #323940; backdrop-filter:blur(6px); font-size:clamp(13px, 1.2vw, 17px); color:var(--fg); max-width:min(92vw, 780px); animation:rise .3s cubic-bezier(.16,1,.3,1); }
+  #toast.show { display:flex; }
+  #toast .ico { position:relative; flex:none; width:2em; height:2em; border-radius:50%; display:flex; align-items:center; justify-content:center; background:#1b1f23; color:var(--muted); font-size:.95em; }
+  #toast .ico.espera::after { inset:-4px; }
+  #toast .tx { display:flex; flex-direction:column; min-width:0; }
+  #toast .tx b { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #toast .tx span { color:var(--muted); font-size:.82em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #toast .est-bar { width:110px; height:4px; margin:0; flex:none; } #toast .est-pct { margin:0; font-size:.82em; flex:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
+  @keyframes rise { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce) { #msg .ico::after, #toast .ico::after, .est-bar.indet i { animation:none; } }
   #countdown { position:absolute; left:0; right:0; top:calc(var(--anchor) - 9vh); text-align:center; z-index:2; color:var(--muted); font-size:clamp(16px, 2vw, 28px); letter-spacing:.2em; display:none; }
   #manual { position:fixed; right:22px; bottom:44px; font-size:14px; color:var(--warn); display:none; z-index:3; }
   #help { position:fixed; left:22px; bottom:16px; font-size:13px; color:var(--dim); z-index:3; opacity:0; transition:opacity .3s; }
@@ -71,10 +96,12 @@
   <div id="fade-bot"></div>
 </div>
 <div id="msg"></div>
+<div id="toast"></div>
 <div id="manual">Modo manual (setas). Tecle A para voltar ao automático.</div>
 <div id="help">F tela cheia · espaço play/stop no Pro Tools · setas linha na mão · A automático</div>
 <div id="contact">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></div>
 <div id="credit"><a href="https://github.com/krocksss" target="_blank"><img src="/static/autor.png" alt="">Marllon Machado · github.com/krocksss</a></div>
+<script src="/static/estados.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let view = null, song = null, songId = null, songCache = {};
@@ -89,12 +116,43 @@ async function loadSong(sid) {
 }
 setInterval(() => { songCache = {}; }, 6000);
 
-function showMsg(title, sub, actions) {
-  $('msg').style.display = 'flex';
-  $('msg').innerHTML = '<div><div class="t">' + title + '</div>' + (sub ? '<span class="s">' + sub + '</span>' : '') + (actions ? '<div class="a">' + actions + '</div>' : '') + '</div>';
-}
-function hideMsg() { $('msg').style.display = 'none'; }
 function esc(s) { return (s||'').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+// Mensagem grande (tela inteira): so quando NAO ha letra para mostrar. codigo/ctx -> static/estados.js.
+// Se o codigo nao mudou, so atualiza textos e barra (nao recria o DOM: o anel girando e a barra nao pulam).
+let msgKey = null;
+function showEstado(codigo, ctx, acoes, nome) {
+  const e = estadoDe(codigo, ctx);
+  const m = $('msg'); m.style.display = 'flex'; $('toast').className = '';
+  const key = e.codigo + '|' + (acoes || '') + '|' + (nome || '');
+  if (msgKey === key) {
+    const t = m.querySelector('.t'), s = m.querySelector('.s'), b = m.querySelector('.est-bar i'), pc = m.querySelector('.est-pct');
+    if (t && t.innerHTML !== e.titulo) t.innerHTML = e.titulo;
+    if (s && s.innerHTML !== e.sub) s.innerHTML = e.sub;
+    if (b && e.pct != null) b.style.width = e.pct + '%';
+    if (pc) pc.textContent = (e.pct != null ? e.pct + '%' : '') + (e.rotulo ? (e.pct != null ? ' · ' : '') + e.rotulo : '');
+    return;
+  }
+  msgKey = key; m.className = e.tipo;
+  m.innerHTML = '<div class="card"><div class="ico ' + e.tipo + '">' + e.icone + '</div><div class="k">' + escEstado(e.area) + '</div>'
+    + '<div class="t">' + e.titulo + '</div>' + (e.sub ? '<span class="s">' + e.sub + '</span>' : '')
+    + (nome ? '<div class="song">♪ ' + esc(nome) + '</div>' : '') + barraHTML(e) + (acoes ? '<div class="a">' + acoes + '</div>' : '') + '</div>';
+}
+function hideMsg() { $('msg').style.display = 'none'; msgKey = null; }
+// Aviso curto no alto, sem cobrir a letra: preparo do Pro Tools, pasta carregando, retranscricao.
+let toastKey = null;
+function toast(codigo, ctx) {
+  if (!codigo) { $('toast').className = ''; toastKey = null; return; }
+  const e = estadoDe(codigo, ctx), t = $('toast'); t.className = 'show';
+  if (toastKey === e.codigo) {
+    const b = t.querySelector('.est-bar i'), pc = t.querySelector('.est-pct'), tt = t.querySelector('.tx b');
+    if (tt && tt.innerHTML !== e.titulo) tt.innerHTML = e.titulo;
+    if (b && e.pct != null) b.style.width = e.pct + '%';
+    if (pc) pc.textContent = (e.pct != null ? e.pct + '%' : '') + (e.rotulo ? (e.pct != null ? ' · ' : '') + e.rotulo : '');
+    return;
+  }
+  toastKey = e.codigo;
+  t.innerHTML = '<div class="ico ' + e.tipo + '">' + e.icone + '</div><div class="tx"><b>' + e.titulo + '</b><span>' + escEstado(e.area) + (e.sub ? ' · ' + e.sub : '') + '</span></div>' + (e.tipo === 'progresso' ? barraHTML(e) : '');
+}
 
 function build(s) {
   const list = $('list'); list.innerHTML = '';
@@ -172,27 +230,45 @@ async function applyView(v) {
   playing = !!v.playing;
   if (v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
 
+  const prep = v.preparo, pp = v.pasta_progresso;   // Pro Tools sendo preparado para o play / pasta sendo carregada
   if (!v.song_id) {
     song = null; songId = null; $('list').innerHTML = ''; lineEls = []; wordEls = []; builtFor = null;
-    if (!v.protools && !v.ptsl) showMsg('Abrindo o Pro Tools', 'Quando ele abrir, abra a sessão da música. Se ainda não tem música aqui, adicione uma.', ADD + STUDIO);
-    else if (!v.session) showMsg('Pro Tools aberto, nenhuma sessão', 'Abra a sessão da música no Pro Tools, ou crie a sessão em Músicas e letras com um clique.', ADD + STUDIO);
-    else showMsg('Sessão "' + esc(v.session) + '" sem letra', 'Adicione a música para transcrever a letra e ela fica vinculada a esta sessão.', ADD + STUDIO);
+    if (prep) showEstado(prep.fase, prep, null, prep.musica);
+    else if (pp) showEstado(pp.fase, pp);
+    else if (v.pt_estado === 'fechado' || (!v.protools && !v.ptsl)) showEstado('pt_fechado', {abre_pt: v.abre_pt}, ADD + STUDIO);
+    else if (v.pt_estado === 'conectando' && !v.session) showEstado('pt_conectando', {}, ADD + STUDIO);
+    else if (!v.session) showEstado('pt_sem_sessao', {tela: 'prompter'}, ADD + STUDIO);
+    else showEstado('sessao_sem_letra', {sessao: v.session}, ADD + STUDIO);
     return;
   }
   const s = await loadSong(v.song_id);
   if (!s) return;
-  if (s.status === 'transcrevendo' || s.status === 'pendente') {
-    const p = v.progresso; showMsg(esc(s.name), (p ? esc(p.etapa) + (p.pct != null ? ' · ' + p.pct + '%' : '') : 'na fila para transcrever') + '. A letra aparece aqui quando terminar.'); return;
+  const busy = s.status === 'transcrevendo' || s.status === 'pendente';
+  const codT = busy ? codigoTranscricao(s.status, v.progresso) : null;
+  if (!s.lines || !s.lines.length) {
+    // sem letra na tela: a mensagem grande e o unico feedback. O preparo do play vem ANTES da transcricao
+    // (foi o que o usuario acabou de pedir); a transcricao volta a aparecer quando o preparo termina.
+    if (prep) showEstado(prep.fase, prep, null, s.name);
+    else if (pp) showEstado(pp.fase, pp, null, s.name);
+    else if (busy) showEstado(codT, ctxTranscricao(v.progresso), null, s.name);
+    else if (s.status === 'sem-voz') showEstado('sem_voz', {}, STUDIO, s.name);
+    else if (s.status === 'erro') showEstado('erro_transcricao', {erro: s.erro}, STUDIO, s.name);
+    else showEstado('sem_letra', {}, STUDIO, s.name);
+    return;
   }
-  if (!s.lines || !s.lines.length) { showMsg(esc(s.name), esc(s.erro || 'sem letra ainda'), STUDIO); return; }
   hideMsg();
+  // letra na tela: avisos curtos em cima, sem cobrir os versos
+  if (prep) toast(prep.fase, prep);
+  else if (pp) toast(pp.fase, pp);
+  else if (busy) toast(codT, ctxTranscricao(v.progresso));
+  else toast(null);
   const key = v.song_id + ':' + s.lines.length + ':' + s.lines.map(l => l.t + '|' + l.text).join('~');
   if (builtFor !== key) { song = s; songId = v.song_id; build(s); builtFor = key; }
 }
 function connect() {
   const es = new EventSource('/api/stream');
   es.onmessage = e => applyView(JSON.parse(e.data));
-  es.onerror = () => { es.close(); showMsg('Prompter desconectado', 'reconectando'); setTimeout(connect, 1500); };
+  es.onerror = () => { es.close(); showEstado('desconectado', {}); setTimeout(connect, 1500); };
 }
 connect();
 function control(body) { return fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)}); }

@@ -120,9 +120,18 @@
   #guide.bad .n { background:#3a2422; color:var(--bad); }
   #guide h3 { margin:0 0 2px; font-size:16px; }
   #guide p { margin:0; color:var(--muted); font-size:14px; }
-  #guide .bar { height:5px; background:var(--line); border-radius:3px; margin-top:10px; overflow:hidden; }
-  #guide .bar i { display:block; height:100%; width:0; background:var(--warn); transition:width .5s var(--ease); }
-  #guide .bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  /* mensagens de estado (static/estados.js): o circulo mostra o icone da situacao; .k e o rotulo da area */
+  #guide .n { position:relative; font-size:15px; }
+  #guide.busy .n::after { content:""; position:absolute; inset:-4px; border-radius:50%; border:2px solid transparent; border-top-color:var(--warn); animation:spin 1.1s linear infinite; }
+  #guide.busy.prog .n::after { display:none; }
+  #guide .k { font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint); margin-bottom:3px; }
+  #guide .est-bar { height:5px; background:var(--line); border-radius:3px; margin-top:10px; overflow:hidden; }
+  #guide .est-bar i { display:block; height:100%; width:0; background:var(--warn); border-radius:3px; transition:width .5s var(--ease); }
+  #guide .est-bar.indet i { width:35%; animation:slide 1.4s ease-in-out infinite; }
+  #guide .est-pct { font-size:12px; color:var(--muted); margin-top:5px; font-variant-numeric:tabular-nums; }
+  #upMsg { font-size:12px; color:var(--muted); margin-top:6px; display:none; } #upMsg.show { display:block; } #upMsg.bad { color:var(--bad); } #upMsg.ok { color:var(--accent); }
+  .pastas .perr { padding:2px 8px 8px 26px; font-size:12px; color:var(--bad); }
+  @keyframes spin { to { transform:rotate(360deg); } }
   @keyframes slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(300%); } }
   @keyframes rise { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
   @media (max-width:700px) { #guide { grid-template-columns:auto 1fr; } #guide > :last-child { grid-column:1 / -1; } }
@@ -179,7 +188,7 @@
 </header>
 <main>
   <aside>
-    <div id="drop" onclick="$('fileIn').click()"><b>Adicionar música</b>Arraste o MP3 ou WAV aqui, ou clique para escolher no computador.<div id="upBar"><i></i></div></div>
+    <div id="drop" onclick="$('fileIn').click()"><b>Adicionar música</b>Arraste o MP3 ou WAV aqui, ou clique para escolher no computador.<div id="upBar"><i></i></div><div id="upMsg"></div></div>
     <input type="file" id="fileIn" accept="audio/*,.mp3,.wav,.m4a,.flac,.aif,.aiff,.ogg" multiple style="display:none">
     <div class="songs pastas" id="pastas"></div>
     <div class="songs" id="songs"></div>
@@ -188,6 +197,7 @@
   <section id="editor"></section>
 </main>
 <footer class="contact">Possui problemas? Gostaria de relatar algum erro? Entre em contato: <a href="https://www.instagram.com/marllon_sec/" target="_blank">instagram.com/marllon_sec</a></footer>
+<script src="/static/estados.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 let songs = {}, cfg = {}, sel = null, view = null, song = null;
@@ -218,10 +228,10 @@ async function loadSongs() {
   const ids = Object.keys(songs).sort((a,b) => songs[a].name.localeCompare(songs[b].name));
   const cp = curPasta && pastas[curPasta] ? pastas[curPasta] : null;
   $('songs').innerHTML = ids.length ? '<div class="lbl">' + (cp ? 'Suas músicas · clique em + para pôr na pasta "' + esc(cp.name) + '"' : 'Suas músicas') + '</div>' + ids.map(id => `<div class="it ${id===sel?'sel':''} ${view && view.song_id===id ? 'live':''}" onclick="select('${id}')">
-      <span class="n">${esc(songs[id].name)}</span>${cp && !cp.songs.includes(id) ? `<button class="ib" onclick="event.stopPropagation();pastaApi({action:'add',pasta_id:'${curPasta}',song_id:'${id}'})" title="pôr na pasta">+</button>` : ''}<span class="st ${songs[id].status}">${statusLabel(songs[id].status)}</span></div>`).join('') : '';
+      <span class="n">${esc(songs[id].name)}</span>${cp && !cp.songs.includes(id) ? `<button class="ib" onclick="event.stopPropagation();pastaApi({action:'add',pasta_id:'${curPasta}',song_id:'${id}'})" title="pôr na pasta">+</button>` : ''}<span class="st ${songs[id].status}">${statusLabel(songs[id].status, songs[id].progresso)}</span></div>`).join('') : '';
   renderPastas();
   if (sel && !songs[sel]) { sel = null; song = null; }
-  if (!sel) renderEmpty();
+  if (!sel) renderEmpty(); else if (song) renderGuide();   // lista/pastas mudaram: o guia acompanha (ex.: erro da pasta que sumiu)
 }
 function renderPastas() {
   const el = $('pastas'); if (!el) return;
@@ -235,15 +245,17 @@ function renderPastas() {
     p.songs.forEach((sid, i) => { const sg = songs[sid]; if (!sg) return;
       const ld = pastaLoaded(id, sid);
       h += `<div class="pi ${sid===sel?'sel':''} ${view && view.song_id===sid && live ? 'live':''}" onclick="select('${sid}')" title="${ld ? 'na linha do tempo do Pro Tools' : 'ainda não está no Pro Tools: o play coloca'}">
-        <span class="n" data-i="${i+1}">${esc(sg.name)}</span><span class="st ${sg.status}">${statusLabel(sg.status)}</span>
+        <span class="n" data-i="${i+1}">${esc(sg.name)}</span><span class="st ${sg.status}">${statusLabel(sg.status, sg.progresso)}</span>
         <button class="ib" onclick="event.stopPropagation();pastaApi({action:'move',pasta_id:'${id}',song_id:'${sid}',dir:-1})" title="subir">↑</button>
         <button class="ib" onclick="event.stopPropagation();pastaApi({action:'move',pasta_id:'${id}',song_id:'${sid}',dir:1})" title="descer">↓</button>
         <button class="ib" onclick="event.stopPropagation();pastaApi({action:'remove',pasta_id:'${id}',song_id:'${sid}'})" title="tirar da pasta">✕</button></div>`; });
     const missing = p.songs.filter(sid => !pastaLoaded(id, sid)).length;
-    const busy = view && view.pasta_progresso && view.pasta_progresso.pasta === p.name;
+    const pg = view && view.pasta_progresso && view.pasta_progresso.pasta === p.name ? view.pasta_progresso : null, busy = !!pg;
+    const busyLbl = pg ? (pg.fase === 'pasta_importando' && pg.total ? 'Colocando ' + pg.n + ' de ' + pg.total + '…' : 'Abrindo a sessão…') : '';
     h += `<div class="pact">` +
-      (p.songs.length ? `<button class="${live && !missing ? 'on' : 'primary'}" ${busy || !(view && view.ptsl) ? 'disabled' : ''} onclick="event.stopPropagation();pastaApi({action:'load',pasta_id:'${id}'})" title="${view && view.ptsl ? '' : 'abra o Pro Tools primeiro'}">${busy ? 'Carregando…' : (live && !missing ? 'No Pro Tools ✓' : (live ? 'Colocar as que faltam' : 'Carregar no Pro Tools'))}</button>` : '') +
+      (p.songs.length ? `<button class="${live && !missing ? 'on' : 'primary'}" ${busy || !(view && view.ptsl) ? 'disabled' : ''} onclick="event.stopPropagation();pastaApi({action:'load',pasta_id:'${id}'})" title="${view && view.ptsl ? '' : 'abra o Pro Tools primeiro'}">${busy ? busyLbl : (live && !missing ? 'No Pro Tools ✓' : (live ? 'Colocar as que faltam' : 'Carregar no Pro Tools'))}</button>` : '') +
       `<button class="quiet" onclick="event.stopPropagation();renamePasta('${id}')">Renomear</button><button class="quiet danger" onclick="event.stopPropagation();delPasta('${id}')">Apagar</button></div>`;
+    if (p.erro && !busy) { const pe = estadoDe('pasta_erro', {erro: p.erro}); h += `<div class="perr">${pe.titulo}: ${pe.sub}</div>`; }
   }
   h += `<div class="newp"><input id="newPasta" placeholder="nova pasta (ex.: Show sábado)" onkeydown="if(event.key==='Enter')newPasta()"><button onclick="newPasta()">Criar</button></div>`;
   el.innerHTML = h;
@@ -252,9 +264,12 @@ function togglePasta(id) { curPasta = curPasta === id ? null : id; renderPastas(
 async function newPasta() { const v = ($('newPasta').value || '').trim(); if (!v) return; const j = await pastaApi({action:'create', name:v}); curPasta = j.pasta_id; renderPastas(); loadSongs(); }
 function renamePasta(id) { const v = prompt('Nome da pasta', pastas[id].name); if (v && v.trim()) pastaApi({action:'rename', pasta_id:id, name:v.trim()}); }
 function delPasta(id) { if (confirm('Apagar a pasta "' + pastas[id].name + '"? As músicas continuam na lista; a sessão no Pro Tools não é apagada.')) { if (curPasta === id) curPasta = null; pastaApi({action:'delete', pasta_id:id}); } }
-function statusLabel(s) { return ({pendente:'na fila', transcrevendo:'transcrevendo', pronto:'pronta', alinhado:'pronta', manual:'pronta', erro:'erro', 'sem-voz':'sem voz'})[s] || s; }
+function statusLabel(s, prog) {
+  if ((s === 'transcrevendo' || s === 'pendente') && prog && prog.fase) return estadoDe(prog.fase, ctxTranscricao(prog)).curto;   // chip diz a fase: "baixando o modelo 42%"
+  return ({pendente:'na fila', transcrevendo:'transcrevendo', pronto:'pronta', alinhado:'pronta', manual:'pronta', erro:'erro', 'sem-voz':'sem voz'})[s] || s;
+}
 async function select(id) {
-  if (sel !== id) { if (dirtyRows) await save(); sel = id; await loadSong(); }
+  if (sel !== id) { if (dirtyRows) await save(); sel = id; guideErro = null; guideBusy = null; await loadSong(); }
   loadSongs();
 }
 async function loadSong() {
@@ -282,7 +297,7 @@ function renderEditor() {
   $('editor').innerHTML = `
     <div class="head">
       <input id="edName" value="${esc(s.name)}" onchange="saveMeta()" title="nome da música">
-      <span class="st ${s.status}" id="edStatus">${statusLabel(s.status)}</span>
+      <span class="st ${s.status}" id="edStatus">${statusLabel(s.status, s.progresso)}</span>
       <span class="saved" id="saved">salvo</span>
       <button class="quiet" onclick="control({action:'force_song',song_id:'${sel}'})" title="mostrar esta música no teleprompter agora, mesmo com outra sessão aberta">Mostrar no teleprompter</button>
     </div>
@@ -324,62 +339,76 @@ function renderEditor() {
   renderRows(); renderTransport(); drawWave(); renderGuide();
 }
 
+// Guia do proximo passo: UM bloco (#guide) alimentado pelo mapa de estados (static/estados.js).
+// guideErro segura um erro ate o usuario agir (o SSE nao apaga); guideBusy e uma espera que so a tela conhece
+// (pedido enviado, backend ainda nao respondeu). Se o codigo nao mudou, so texto e barra sao atualizados.
+let guideErro = null, guideBusy = null, guideKey = null;
+function showGuide(codigo, ctx, acoes) {
+  const g = $('guide'); if (!g) return;
+  const e = estadoDe(codigo, ctx);
+  const cls = ({espera:'busy', progresso:'busy prog', erro:'bad', ok:'ok', info:''})[e.tipo] || '';
+  const key = e.codigo + '|' + (acoes || '');
+  if (guideKey === key && g.className === cls) {
+    const h = g.querySelector('h3'), p = g.querySelector('p'), b = g.querySelector('.est-bar i'), pc = g.querySelector('.est-pct');
+    if (h && h.innerHTML !== e.titulo) h.innerHTML = e.titulo;
+    if (p && p.innerHTML !== e.sub) p.innerHTML = e.sub;
+    if (b && e.pct != null) b.style.width = e.pct + '%';
+    if (pc) pc.textContent = (e.pct != null ? e.pct + '%' : '') + (e.rotulo ? (e.pct != null ? ' · ' : '') + e.rotulo : '');
+    return;
+  }
+  guideKey = key; g.className = cls;
+  g.innerHTML = `<div class="n">${e.icone}</div><div><div class="k">${escEstado(e.area)}</div><h3>${e.titulo}</h3><p>${e.sub}</p>${barraHTML(e)}</div><div>${acoes || ''}</div>`;
+}
+function falha(j, tentar) {   // resposta {ok:false, erro|msg, codigo} -> erro grudado no guia com o proximo passo
+  const cod = j && j.codigo && ESTADOS[j.codigo] ? j.codigo : 'erro_preparo';
+  guideErro = {codigo: cod, ctx: {erro: (j && (j.erro || j.msg)) || ''}, acoes: `<button class="primary" onclick="guideErro=null;${tentar}">Tentar de novo</button>`};
+  renderGuide();
+}
 function renderGuide() {
   const g = $('guide'); if (!g || !song) return;
   const p = (songs[sel] && songs[sel].progresso) || null;
   const st = (songs[sel] && songs[sel].status) || song.status;
-  let cls = '', n = '', h = '', txt = '', act = '', bar = '';
-  if (st === 'transcrevendo' || st === 'pendente') {
-    cls = 'busy'; n = '1'; h = p ? p.etapa : (st === 'pendente' ? 'Na fila para transcrever' : 'Transcrevendo');
-    txt = 'A letra aparece aqui quando terminar, com o tempo de cada palavra.';
-    bar = `<div class="bar ${p && p.pct != null ? '' : 'indet'}"><i style="width:${p && p.pct != null ? p.pct : 0}%"></i></div>`;
-  } else if (st === 'erro') {
-    cls = 'bad'; n = '!'; h = 'A transcrição falhou'; txt = esc(song.erro || ''); act = '<button class="primary" onclick="retry()">Tentar de novo</button>';
-  } else if (!view || !view.ptsl) {
-    cls = ''; n = '2'; h = view && view.protools ? 'Pro Tools aberto, sem conexão' : 'Abra o Pro Tools';
-    txt = 'A letra está pronta. Com o Pro Tools aberto, o play daqui e de lá andam juntos.';
-    act = '<button onclick="openPT()">Abrir o Pro Tools</button>';
-  } else if (view.pasta_progresso && (pastaOf(sel) ? pastas[pastaOf(sel)].name === view.pasta_progresso.pasta : true)) {
-    cls = 'busy'; n = '2'; h = 'Carregando a pasta "' + esc(view.pasta_progresso.pasta) + '" no Pro Tools'; txt = esc(view.pasta_progresso.msg); bar = '<div class="bar indet"><i></i></div>';
-  } else if (pastaOf(sel) && !pastaLoaded(pastaOf(sel), sel)) {
-    const pp = pastas[pastaOf(sel)];
-    cls = ''; n = '2'; h = view.pasta_id === pastaOf(sel) ? 'Esta música ainda não está na linha do tempo da pasta' : 'A pasta "' + esc(pp.name) + '" não está aberta no Pro Tools';
-    txt = 'Aperte play: o Prompter ' + (view.pasta_id === pastaOf(sel) ? 'coloca a música no fim da linha do tempo e toca.' : 'abre a sessão da pasta com todas as músicas enfileiradas na linha do tempo (só na primeira vez) e toca esta.');
-    act = `<button class="primary" onclick="pastaApi({action:'load',pasta_id:'${pastaOf(sel)}'})">Carregar a pasta no Pro Tools</button>`;
-  } else if (pastaOf(sel) && pastaLoaded(pastaOf(sel), sel)) {
-    cls = 'ok'; n = '✓'; h = 'Na pasta "' + esc(pastas[pastaOf(sel)].name) + '", pronta no Pro Tools';
-    txt = 'Aperte play: o Pro Tools pula para esta música na hora. Deixando tocar, o teleprompter passa para a próxima sozinho.';
-    act = '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>';
-  } else if (!sessionMatches()) {
-    cls = ''; n = '2'; h = view.session ? 'Outra sessão está aberta no Pro Tools' : 'Sem sessão aberta no Pro Tools';
-    txt = view.session ? `Aberta agora: "${esc(view.session)}". Aperte play: o Prompter carrega esta música no Pro Tools (na sessão dela) antes de tocar.` : 'Aperte play: o Prompter cria a sessão com a música na faixa 1 e toca.';
-    act = (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>';
-  } else if (view.session_audio_n === 0) {
-    cls = ''; n = '2'; h = 'A sessão "' + esc(view.session) + '" está sem áudio';
-    txt = 'Aperte play: o Prompter coloca a música na faixa 1 desta sessão e toca. Ou clique abaixo para só colocar.';
-    act = '<button class="primary" onclick="importIntoSession()">Colocar a música nesta sessão</button>';
-  } else {
-    cls = 'ok'; n = '✓'; h = 'Pronta e sincronizada com "' + esc(view.session) + '"';
-    txt = 'Aperte play aqui ou no Pro Tools. O teleprompter acompanha palavra por palavra.';
-    act = '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>';
-  }
-  g.className = cls;
-  g.innerHTML = `<div class="n">${n}</div><div><h3>${h}</h3><p>${txt}</p>${bar}</div><div>${act}</div>`;
+  const pp = pastaOf(sel), pn = pp ? pastas[pp].name : '';
+  const prep = view && view.preparo && (!view.preparo.sid || view.preparo.sid === sel) ? view.preparo : null;
+  const pprog = view && view.pasta_progresso && (pp ? pn === view.pasta_progresso.pasta : true) ? view.pasta_progresso : null;
+  if (guideErro) return showGuide(guideErro.codigo, guideErro.ctx, guideErro.acoes);
+  // o que o usuario acabou de pedir (play / criar sessao / alinhar) vem antes da transcricao de fundo
+  if (prep) return showGuide(prep.fase, prep);
+  if (guideBusy) return showGuide(guideBusy, {pasta: pn, sessao: view && view.session});
+  if (preparing) return showGuide(pp ? 'pasta_abrindo' : 'sessao_preparando', {pasta: pn});
+  if (pprog) return showGuide(pprog.fase, pprog);
+  if (st === 'transcrevendo' || st === 'pendente') return showGuide(codigoTranscricao(st, p), ctxTranscricao(p));
+  if (st === 'erro') return showGuide('erro_transcricao', {erro: song.erro}, '<button class="primary" onclick="guideErro=null;retry()">Tentar de novo</button>');
+  if (st === 'sem-voz') return showGuide('sem_voz', {}, '<button onclick="toggleTracks()">Escolher outra faixa</button> <button class="primary" onclick="$(\'pasteBox\').style.display=\'block\'">Colar letra oficial</button>');
+  if (!view || !view.ptsl) return showGuide(view && view.protools ? 'pt_conectando' : 'pt_fechado', {abre_pt: view ? view.abre_pt : true}, '<button onclick="openPT()">Abrir o Pro Tools</button>');
+  const loadBtn = pp ? `<button class="primary" onclick="pastaApi({action:'load',pasta_id:'${pp}'})">Carregar a pasta no Pro Tools</button>` : '';
+  if (pp && pastas[pp].erro && !pastaLoaded(pp, sel)) return showGuide('pasta_erro', {erro: pastas[pp].erro}, loadBtn);
+  if (pp && !pastaLoaded(pp, sel)) return showGuide(view.pasta_id === pp ? 'pt_pasta_falta' : 'pt_pasta_fora', {pasta: pn}, loadBtn);
+  if (pp) return showGuide('pronto_pasta', {pasta: pn}, '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>');
+  // sessao aberta e VAZIA: o play coloca a musica nela (ensure_session), nao troca de sessao
+  if (view.session && view.session_audio_n === 0 && !sessionMatches()) return showGuide('pt_sessao_vazia', {sessao: view.session}, '<button class="primary" onclick="importIntoSession()">Colocar a música nesta sessão</button>');
+  if (!sessionMatches()) return showGuide(view.session ? 'pt_outra_sessao' : 'pt_sem_sessao', {sessao: view.session},
+    (view.session ? `<button onclick="linkTo(${JSON.stringify(view.session).replace(/"/g,'&quot;')})">Vincular à sessão aberta</button> ` : '') + '<button class="primary" onclick="makeSession()">Criar sessão no Pro Tools</button>');
+  showGuide('pronto', {sessao: view.session}, '<a href="/" target="_blank"><button>Abrir o teleprompter</button></a>');
 }
 function openPT() { fetch('/api/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action:'open_protools'})}); }
 async function makeSession() {
-  const g = $('guide'); g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Preparando a sessão no Pro Tools</h3><p>Convertendo o áudio e importando na faixa 1.</p><div class="bar indet"><i></i></div></div><div></div>';
-  const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel})});
-  const j = await r.json();
-  if (!j.ok) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para preparar a sessão</h3><p>' + esc(j.msg || '') + '</p></div><div><button onclick="makeSession()">Tentar de novo</button></div>'; return; }
-  setTimeout(async () => { await loadSong(); }, 2500);
+  guideErro = null; guideBusy = 'sessao_preparando'; renderGuide();
+  try {
+    const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel})});
+    const j = await r.json();
+    if (!j.ok) return falha(j, 'makeSession()');
+    setTimeout(async () => { await loadSong(); }, 2500);
+  } finally { guideBusy = null; if (!guideErro) renderGuide(); }
 }
 async function importIntoSession() {
-  const g = $('guide'); g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>Colocando a música na sessão</h3><p>Convertendo o áudio e importando na faixa 1.</p><div class="bar indet"><i></i></div></div><div></div>';
-  const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel, into_open: true})});
-  const j = await r.json();
-  if (!j.ok) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para importar</h3><p>' + esc(j.msg || '') + '</p></div><div><button onclick="importIntoSession()">Tentar de novo</button></div>'; return; }
-  setTimeout(async () => { await loadSong(); }, 2000);
+  guideErro = null; guideBusy = 'audio_importando'; renderGuide();
+  try {
+    const r = await fetch('/api/protools/session', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({song_id: sel, into_open: true})});
+    const j = await r.json();
+    if (!j.ok) return falha(j, 'importIntoSession()');
+    setTimeout(async () => { await loadSong(); }, 2000);
+  } finally { guideBusy = null; if (!guideErro) renderGuide(); }
 }
 async function linkTo(sess) { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_alias: sess})}); await loadSong(); }
 
@@ -467,12 +496,15 @@ async function save() {
 function syncRowTimes() { document.querySelectorAll('#lines .row').forEach((r, i) => { if (rows[i]) r.querySelector('.t').value = fmt(rows[i].t); }); }
 async function saveMeta() { await save(); }
 async function realign() { if (!sel) return; clearTimeout(saveTimer);
-  const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lines: rows.map(l => ({t:l.t, text:l.text})), realign:true})});
-  const j = await r.json(); if (j.song) { song = j.song; rows = (song.lines||[]).map(l => ({t:l.t, end:l.end, text:l.text, words:l.words||null})); dirtyRows = false; renderEditor(); } }
-async function retry(source) { clearTimeout(saveTimer); await fetch('/api/song/' + sel + '/retry', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(source ? {source} : {})}); await loadSongs(); await loadSong(); }
+  guideBusy = 'alinhando'; renderGuide();
+  try {
+    const r = await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lines: rows.map(l => ({t:l.t, text:l.text})), realign:true})});
+    const j = await r.json(); guideBusy = null; if (j.song) { song = j.song; rows = (song.lines||[]).map(l => ({t:l.t, end:l.end, text:l.text, words:l.words||null})); dirtyRows = false; renderEditor(); }
+  } finally { guideBusy = null; } }
+async function retry(source) { clearTimeout(saveTimer); guideErro = null; await fetch('/api/song/' + sel + '/retry', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(source ? {source} : {})}); await loadSongs(); await loadSong(); }
 function toggleTracks() { const b = $('trackBox'); b.style.display = b.style.display === 'none' ? 'block' : 'none'; }
 async function del() { if (!confirm('Remover "' + song.name + '" da lista? Os arquivos continuam no computador.')) return; await fetch('/api/song/' + sel, {method:'DELETE'}); sel = null; song = null; renderEmpty(); loadSongs(); }
-async function applyText() { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({official: $('pasteTxt').value})}); await loadSongs(); await loadSong(); }
+async function applyText() { guideBusy = 'alinhando'; renderGuide(); try { await fetch('/api/song/' + sel, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({official: $('pasteTxt').value})}); } finally { guideBusy = null; } await loadSongs(); await loadSong(); }
 
 async function loadAudio() {
   peaks = null; duration = song.duracao || 0; drawWave();
@@ -516,13 +548,13 @@ async function togglePlay() {
     else {
       const pp = pastaOf(sel);
       const needs = pp ? !pastaLoaded(pp, sel) : !(sessionMatches() && (view.session_audio_n || 0) > 0);
-      if (needs) { preparing = true; const g = $('guide'); if (g) { g.className = 'busy'; g.innerHTML = '<div class="n">2</div><div><h3>' + (pp ? 'Carregando a pasta "' + esc(pastas[pp].name) + '" no Pro Tools' : 'Carregando a música no Pro Tools') + '</h3><p>' + (pp ? 'Abrindo a sessão da pasta e colocando as músicas na linha do tempo. Só na primeira vez; depois trocar é na hora.' : 'Convertendo o áudio e preparando a sessão. O play começa em seguida.') + '</p><div class="bar indet"><i></i></div></div><div></div>'; } }
+      if (needs) { preparing = true; guideErro = null; renderGuide(); }
       try {
         const r = await transport({action:'play', seconds: songTime(), ensure: true});
         const j = await r.json();
-        if (!j.ok) { const g = $('guide'); if (g) { g.className = 'bad'; g.innerHTML = '<div class="n">!</div><div><h3>Não deu para preparar o Pro Tools</h3><p>' + esc(j.erro || '') + '</p></div><div><button onclick="togglePlay()">Tentar de novo</button></div>'; } }
+        if (!j.ok) falha(j, 'togglePlay()');
         else if (needs) setTimeout(loadSong, 1500);
-      } finally { preparing = false; }
+      } finally { preparing = false; if (!guideErro) renderGuide(); }
     }
   }
   else { if (audio.paused) { try { await audio.play(); } catch (e) {} } else audio.pause(); }
@@ -567,11 +599,13 @@ function upload(files) {
   const fd = new FormData();
   [...files].forEach(f => fd.append('file', f, f.name));
   if (view && view.session) fd.append('session_alias', view.session);
-  const bar = $('upBar'); bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
+  const bar = $('upBar'), um = $('upMsg'); bar.style.display = 'block'; bar.firstElementChild.style.width = '0';
+  const upMsg = (cod, ctx) => { const e = estadoDe(cod, ctx); um.className = 'show ' + (e.tipo === 'erro' ? 'bad' : e.tipo === 'ok' ? 'ok' : ''); um.innerHTML = e.tipo === 'erro' ? '<b>' + e.titulo + '.</b> ' + e.sub : e.titulo + (e.pct != null ? ' · ' + e.pct + '%' : ''); };
+  upMsg('enviando', {pct: 0});
   const x = new XMLHttpRequest(); x.open('POST', '/api/upload');
-  x.upload.onprogress = ev => { if (ev.lengthComputable) bar.firstElementChild.style.width = Math.round(ev.loaded / ev.total * 100) + '%'; };
-  x.onload = async () => { bar.style.display = 'none'; try { const j = JSON.parse(x.responseText); if (j.ok) { await loadSongs(); await select(j.song_id); } else alert(j.erro || 'falha no envio'); } catch (e) { alert('falha no envio'); } };
-  x.onerror = () => { bar.style.display = 'none'; alert('falha no envio'); };
+  x.upload.onprogress = ev => { if (ev.lengthComputable) { const pct = Math.round(ev.loaded / ev.total * 100); bar.firstElementChild.style.width = pct + '%'; upMsg('enviando', {pct}); } };
+  x.onload = async () => { bar.style.display = 'none'; try { const j = JSON.parse(x.responseText); if (j.ok) { upMsg('enviado'); setTimeout(() => { um.className = ''; }, 5000); await loadSongs(); await select(j.song_id); } else upMsg('envio_erro', {erro: j.erro}); } catch (e) { upMsg('envio_erro', {}); } };
+  x.onerror = () => { bar.style.display = 'none'; upMsg('envio_erro', {erro: 'o Prompter não respondeu'}); };
   x.send(fd);
 }
 
@@ -586,7 +620,7 @@ function connect() {
     if (sel && v.song_id === sel && v.song_seconds != null) { base = v.song_seconds; baseAt = performance.now(); }
     else if (sel && v.seconds != null && song) { const pp = pastaOf(sel); const lay = pp && pastas[pp].layout && pastas[pp].layout[sel]; base = v.seconds - (lay ? lay.offset : (song.offset || 0)); baseAt = performance.now(); }
     playing = !!v.playing;
-    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id || prev.session_audio_n !== v.session_audio_n || prev.pasta_id !== v.pasta_id || JSON.stringify(prev.loaded) !== JSON.stringify(v.loaded) || JSON.stringify(prev.pasta_progresso) !== JSON.stringify(v.pasta_progresso)) { renderTransport(); renderGuide(); renderPastas(); }
+    if (!prev || prev.playing !== v.playing || prev.ptsl !== v.ptsl || prev.protools !== v.protools || prev.session !== v.session || prev.source !== v.source || prev.song_id !== v.song_id || prev.session_audio_n !== v.session_audio_n || prev.pasta_id !== v.pasta_id || JSON.stringify(prev.loaded) !== JSON.stringify(v.loaded) || JSON.stringify(prev.pasta_progresso) !== JSON.stringify(v.pasta_progresso) || JSON.stringify(prev.preparo) !== JSON.stringify(v.preparo)) { renderTransport(); renderGuide(); renderPastas(); }
     if (prev && (prev.pasta_progresso && !v.pasta_progresso)) loadSongs();
     if (sel && v.song_id === sel && v.progresso && songs[sel]) { songs[sel].progresso = v.progresso; renderGuide(); }
     if (sel && v.song_id === sel && prev && prev.status !== v.status && v.status !== 'transcrevendo') loadSong();
@@ -609,7 +643,8 @@ setInterval(async () => {
   const a = JSON.stringify(Object.values(j.songs).map(s => [s.status, s.progresso && s.progresso.pct, s.progresso && s.progresso.etapa, s.n_lines]));
   const b = JSON.stringify(Object.values(songs).map(s => [s.status, s.progresso && s.progresso.pct, s.progresso && s.progresso.etapa, s.n_lines]));
   if (a !== b) { const was = songs[sel] && songs[sel].status; songs = j.songs; loadSongs();
-    if (sel && j.songs[sel]) { renderGuide(); if ((was === 'transcrevendo' || was === 'pendente') && !['transcrevendo','pendente'].includes(j.songs[sel].status)) loadSong(); } }
+    if (sel && j.songs[sel]) { renderGuide(); const st = $('edStatus'); if (st) { st.textContent = statusLabel(j.songs[sel].status, j.songs[sel].progresso); st.className = 'st ' + j.songs[sel].status; }
+      if ((was === 'transcrevendo' || was === 'pendente') && !['transcrevendo','pendente'].includes(j.songs[sel].status)) loadSong(); } }
 }, 2000);
 </script>
 </body>

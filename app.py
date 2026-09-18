@@ -18,7 +18,7 @@ Serve a tela do prompter, o estudio de letras e a configuracao em http://localho
 import os, sys, json, time, threading, re, unicodedata, traceback, webbrowser, subprocess, difflib, socket
 from pathlib import Path
 
-VERSION = "2.0.21"
+VERSION = "2.0.22"
 REPO = "krocksss/TelePrompterProTools"
 AUTHOR = {"name": "Marllon Machado", "github": "https://github.com/krocksss", "repo": "https://github.com/" + REPO}
 WIN = sys.platform == "win32"
@@ -738,12 +738,14 @@ class Transcriber(threading.Thread):
         self.current = None
         self.preload = False
 
-    def set_prog(self, sid, etapa, pct=None, extra=None):
+    def set_prog(self, sid, etapa, pct=None, extra=None, fase=None):
+        """Progresso da transcricao desta musica. 'etapa' e o texto antigo (compatibilidade); 'fase' e o codigo
+        estruturado que as telas usam para escolher a mensagem propria (ver static/estados.js)."""
         s = LIB.get(sid)
         if s is not None:
             with LIB.lock:
                 s["progresso"] = {"etapa": etapa, "pct": None if pct is None else round(float(pct) * 100),
-                                  "extra": extra, "at": time.time()}
+                                  "extra": extra, "fase": fase, "at": time.time()}
 
     @staticmethod
     def hub_dir():
@@ -814,7 +816,9 @@ class Transcriber(threading.Thread):
                 while not stop.is_set():
                     try:
                         got = sum(f.stat().st_size for f in mdir.rglob("*") if f.is_file()) if mdir.exists() else 0
-                        self.set_prog(sid, "baixando modelo de transcrição (só uma vez, %d MB)" % size_mb, min(0.99, got / (size_mb * 1e6)))
+                        if not stop.is_set():   # o download acabou enquanto somava: nao sobrescreve a fase seguinte
+                            self.set_prog(sid, "baixando modelo de transcrição (só uma vez, %d MB)" % size_mb, min(0.99, got / (size_mb * 1e6)),
+                                          extra={"mb": size_mb, "mb_ok": int(got / 1e6)}, fase="modelo_baixando")
                     except Exception:
                         pass
                     stop.wait(2)
@@ -822,6 +826,9 @@ class Transcriber(threading.Thread):
         try:
             if not cached:
                 self.materialize(repo, mdir, sid)
+            stop.set()   # download concluido: daqui em diante a fase e "carregando na memoria"
+            if sid:
+                self.set_prog(sid, "carregando o modelo de transcrição na memória", None, fase="modelo_carregando")
             last = None
             for tentativa in range(6):
                 try:
@@ -831,7 +838,8 @@ class Transcriber(threading.Thread):
                     last = e
                     log("  modelo nao abriu (tentativa %d): %s" % (tentativa + 1, str(e)[:160]))
                     if sid:
-                        self.set_prog(sid, "modelo baixado, aguardando o arquivo liberar (tentativa %d de 6)" % (tentativa + 2), None)
+                        self.set_prog(sid, "modelo baixado, aguardando o arquivo liberar (tentativa %d de 6)" % (tentativa + 2), None,
+                                      extra={"tentativa": tentativa + 2, "de": 6}, fase="modelo_liberando")
                     time.sleep(8)
             else:
                 raise last
@@ -883,7 +891,10 @@ class Transcriber(threading.Thread):
                 return str(out)
             self.wait_if_playing()
             log("  separando vocal (demucs):", os.path.basename(wav))
-            self.set_prog(sid, "isolando a voz" if self.demucs_cached() else "baixando o separador de voz (só uma vez, 80 MB) e isolando a voz", 0)
+            if self.demucs_cached():
+                self.set_prog(sid, "isolando a voz", 0, fase="voz_isolando")
+            else:
+                self.set_prog(sid, "baixando o separador de voz (só uma vez, 80 MB) e isolando a voz", None, extra={"mb": 80}, fase="separador_baixando")
             cmd = [sys.executable, "--demucs", str(wav), str(out)] if FROZEN else [sys.executable, str(BASE / "app.py"), "--demucs", str(wav), str(out)]
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=LOWPRIO, text=True, encoding="utf-8", errors="replace")
             if not WIN:
@@ -906,7 +917,7 @@ class Transcriber(threading.Thread):
             for line in p.stdout:
                 last_out[0] = time.time()
                 if line.startswith("PROG"):
-                    self.set_prog(sid, "isolando a voz", float(line.split()[1]))
+                    self.set_prog(sid, "isolando a voz", float(line.split()[1]), fase="voz_isolando")
             p.wait(timeout=600)
             if p.returncode != 0 or not out.exists():
                 log("  demucs falhou, usando o audio original:", "\n".join(err[-8:]))
@@ -924,11 +935,11 @@ class Transcriber(threading.Thread):
         wavdir.mkdir(exist_ok=True)
         wav = wavdir / (norm(Path(path).stem).replace(" ", "_") + ".wav")
         if not wav_ok(wav) or wav.stat().st_mtime < os.path.getmtime(path):
-            self.set_prog(sid, "lendo o áudio", None)
+            self.set_prog(sid, "lendo o áudio", None, fase="audio_lendo")
             to_wav(path, wav)
         model = self.get_model(sid)
         src = self.separate_vocals(str(wav), sid)
-        self.set_prog(sid, "ouvindo a letra", 0)
+        self.set_prog(sid, "ouvindo a letra", 0, fase="ouvindo")
         # vad_filter desligado: o detector de fala descarta voz CANTADA
         segments, info = model.transcribe(src, language=CFG["idioma"] or None, vad_filter=False,
                                           word_timestamps=True, beam_size=5, condition_on_previous_text=False)
@@ -938,7 +949,7 @@ class Transcriber(threading.Thread):
         all_words = []
         for seg in segments:
             self.wait_if_playing()
-            self.set_prog(sid, "ouvindo a letra", min(0.99, seg.end / dur))
+            self.set_prog(sid, "ouvindo a letra", min(0.99, seg.end / dur), fase="ouvindo")
             txt_all = seg.text.strip()
             nt = norm(txt_all)
             toks = nt.split()
@@ -982,7 +993,7 @@ class Transcriber(threading.Thread):
         s = LIB.get(sid)
         with LIB.lock:
             s["status"] = "transcrevendo"
-            s["progresso"] = {"etapa": "na fila", "pct": None}
+            s["progresso"] = {"etapa": "na fila", "pct": None, "fase": "fila", "at": time.time()}
             forced = s.pop("fonte_forcada", None)
         self.current = sid
         LIB.save()
@@ -1008,6 +1019,8 @@ class Transcriber(threading.Thread):
                 if nwords > 20 and (path in (s.get("originals") or []) or len(cands) > 3):
                     break  # achou voz, nao precisa olhar o resto
             official = lyrics_txt_for(s)
+            if official and best_wl:
+                self.set_prog(sid, "alinhando com a letra oficial", None, fase="alinhando")
             with LIB.lock:
                 s["words"] = best_wl
                 s["source"] = best_file
@@ -1066,6 +1079,8 @@ class State:
         self.pt_found = False
         self.forced_song = None
         self.manual_line = None
+        # preparo do Pro Tools em andamento (converter audio, abrir/criar sessao, importar): so para as telas
+        self.prep = None
 
     def mtc_live(self):
         return (time.monotonic() - self.last_qf) < 0.3
@@ -1186,6 +1201,18 @@ class PTLink(threading.Thread):
         self.version = None
         self.err = None
         self.poll_s = 0.08
+
+    def set_prep(self, fase, song=None, **extra):
+        """Fase do preparo do Pro Tools para as telas (nao muda o fluxo). fase=None limpa."""
+        if fase is None:
+            self.state.prep = None
+            return
+        d = {"fase": fase, "at": time.time()}
+        if song is not None:
+            d["musica"] = song.get("name")
+            d["sid"] = LIB.sid_of(song)
+        d.update(extra)
+        self.state.prep = d
 
     def connect(self):
         import ptsl
@@ -1370,30 +1397,35 @@ class PTLink(threading.Thread):
         """Coloca o audio da musica na sessao ABERTA do Pro Tools: faixa nova, no 0:00 (convertido para WAV)."""
         import ptsl.PTSL_pb2 as pt
         from ptsl import ops
-        with self.lock:
-            sr = self.session_rate()   # converte para a taxa da sessao: copiar 44.1k numa sessao 48k toca 9% mais rapido
-        wav = self.song_wav(song, sr)
-        if wav is None:
-            return {"ok": False, "msg": "a música não tem arquivo de áudio"}
-        with self.lock:
-            e = self.engine
-            sp = e.session_path()
-            name = e.session_name()
-            af = Path(sp).parent / "Audio Files"
-            if af.exists() and any(audio_is_song(f.name, wav.stem) for f in af.iterdir()):
+        try:
+            self.set_prep("audio_convertendo", song, sessao=self.state.session)
+            with self.lock:
+                sr = self.session_rate()   # converte para a taxa da sessao: copiar 44.1k numa sessao 48k toca 9% mais rapido
+            wav = self.song_wav(song, sr)
+            if wav is None:
+                return {"ok": False, "msg": "a música não tem arquivo de áudio", "codigo": "sem_audio"}
+            with self.lock:
+                e = self.engine
+                sp = e.session_path()
+                name = e.session_name()
+                af = Path(sp).parent / "Audio Files"
+                if af.exists() and any(audio_is_song(f.name, wav.stem) for f in af.iterdir()):
+                    self.state.session_audio_n = session_audio_count(sp)
+                    self.bind_song(song, name, sp)
+                    return {"ok": True, "session": name, "msg": "a música já está na sessão \"%s\"" % name}
+                self.set_prep("audio_importando", song, sessao=name)
+                loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
+                ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
+                                  destination_path=str(Path(sp).parent / "Audio Files"),
+                                  audio_destination=pt.MDestination_NewTrack, audio_location=pt.MLocation_SessionStart, location_data=loc)
+                e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio, audio_data=ad))
+                e.save_session()
                 self.state.session_audio_n = session_audio_count(sp)
                 self.bind_song(song, name, sp)
-                return {"ok": True, "session": name, "msg": "a música já está na sessão \"%s\"" % name}
-            loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
-            ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
-                              destination_path=str(Path(sp).parent / "Audio Files"),
-                              audio_destination=pt.MDestination_NewTrack, audio_location=pt.MLocation_SessionStart, location_data=loc)
-            e.client.run(ops.CId_Import(session_path=sp, import_type=pt.IType_Audio, audio_data=ad))
-            e.save_session()
-            self.state.session_audio_n = session_audio_count(sp)
-            self.bind_song(song, name, sp)
-        log("audio importado na sessao aberta:", name, "a", sr, "Hz")
-        return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
+            log("audio importado na sessao aberta:", name, "a", sr, "Hz")
+            return {"ok": True, "session": name, "msg": "música colocada na sessão \"%s\" (%d Hz)" % (name, sr)}
+        finally:
+            self.set_prep(None)
 
     def bind_song(self, song, session_name, session_path):
         """Registra que o audio DESTA musica esta na sessao (nome + arquivo .ptx) e que ela e a musica da sessao aberta."""
@@ -1507,7 +1539,7 @@ class PTLink(threading.Thread):
         if prev and os.path.exists(prev):
             ptx = Path(prev)
             name = ptx.stem
-        pasta["progresso"] = {"msg": "abrindo a sessão da pasta no Pro Tools"}
+        pasta["progresso"] = {"msg": "abrindo a sessão da pasta no Pro Tools", "fase": "pasta_abrindo"}
         try:
             with self.lock:
                 e = self.engine
@@ -1558,7 +1590,8 @@ class PTLink(threading.Thread):
                     self.state.session_song = None
                 for i, sid in enumerate(missing):
                     song = LIB.get(sid)
-                    pasta["progresso"] = {"msg": "colocando \"%s\" na linha do tempo (%d de %d)" % (song["name"], i + 1, len(missing))}
+                    pasta["progresso"] = {"msg": "colocando \"%s\" na linha do tempo (%d de %d)" % (song["name"], i + 1, len(missing)),
+                                          "fase": "pasta_importando", "n": i + 1, "total": len(missing), "musica": song["name"]}
                     wav = self.song_wav(song, sr)
                     if wav is None:
                         log("pasta", name, ": musica sem audio, pulada:", song["name"])
@@ -1641,7 +1674,14 @@ class PTLink(threading.Thread):
 
     def make_session(self, song):
         """Cria (ou abre) a sessao do Pro Tools com o nome da musica e importa o audio no 0:00, numa faixa nova.
-        Sessao criada em <pasta_musicas>/Sessoes/<nome>/<nome>.ptx. Devolve dict com ok/msg."""
+        Sessao criada em <pasta_musicas>/Sessoes/<nome>/<nome>.ptx. Devolve dict com ok/msg.
+        As fases (set_prep) so alimentam as mensagens das telas."""
+        try:
+            return self._make_session(song)
+        finally:
+            self.set_prep(None)
+
+    def _make_session(self, song):
         import ptsl.PTSL_pb2 as pt
         from ptsl import ops
         name = re.sub(r'[\\/:*?"<>|]+', " ", song["name"])
@@ -1652,10 +1692,12 @@ class PTLink(threading.Thread):
                 src = c
                 break
         if not src:
-            return {"ok": False, "msg": "a música não tem arquivo de áudio"}
+            return {"ok": False, "msg": "a música não tem arquivo de áudio", "codigo": "sem_audio"}
+        self.set_prep("sessao_preparando", song, sessao=name)
         wav = DATA / "wav" / (norm(Path(src).stem).replace(" ", "_") + ".wav")
         if not wav.exists() or wav.stat().st_mtime < os.path.getmtime(src):
             wav.parent.mkdir(exist_ok=True)
+            self.set_prep("audio_convertendo", song, sessao=name)
             to_wav(src, wav)
         base = Path(CFG["pasta_musicas"]) / "Sessoes"
         base.mkdir(parents=True, exist_ok=True)
@@ -1680,14 +1722,17 @@ class PTLink(threading.Thread):
                 return {"ok": True, "session": cur, "msg": "a sessão já está aberta no Pro Tools"}
             if cur:
                 log("fechando a sessao", cur, "para abrir", name)
+                self.set_prep("sessao_fechando", song, sessao=name, sessao_anterior=cur)
                 e.close_session(save_on_close=True)
                 time.sleep(1.5)
             if ptx.exists():
+                self.set_prep("sessao_abrindo", song, sessao=name)
                 e.open_session(str(ptx))
                 log("sessao aberta no Pro Tools:", ptx)
                 msg = "sessão aberta no Pro Tools"
                 sp = str(ptx)
             else:
+                self.set_prep("sessao_criando", song, sessao=name)
                 b = e.create_session(name, str(base))
                 b.wave_format()
                 b.sample_rate(44100)
@@ -1695,6 +1740,7 @@ class PTLink(threading.Thread):
                 b.create()
                 time.sleep(1.0)
                 sp = e.session_path()
+                self.set_prep("audio_importando", song, sessao=name)
                 loc = pt.SpotLocationData(location_type=pt.Start, location_options=pt.TimeCode, location_value="00:00:00:00")
                 ad = pt.AudioData(file_list=[str(wav)], audio_operations=pt.AOperations_CopyAudio,
                                   destination_path=str(Path(sp).parent / "Audio Files"),
@@ -1766,7 +1812,8 @@ class PTWatcher(threading.Thread):
 # ----------------------------------------------------------------------------
 # Atualizacao: olha as releases do GitHub
 # ----------------------------------------------------------------------------
-UPDATE = {"checked": None, "latest": None, "url": None, "asset": None, "notes": None, "msg": None, "busy": False, "pct": None}
+UPDATE = {"checked": None, "latest": None, "url": None, "asset": None, "notes": None, "msg": None, "busy": False, "pct": None,
+          "fase": None, "mb": None}   # fase: codigo estruturado para as telas (upd_baixando, upd_instalando, upd_erro, upd_sem_resposta)
 
 
 def vtuple(v):
@@ -1787,6 +1834,8 @@ def check_update():
         UPDATE["url"] = d.get("html_url")
         UPDATE["notes"] = (d.get("body") or "")[:600]
         UPDATE["msg"] = None
+        if UPDATE["fase"] == "upd_sem_resposta":
+            UPDATE["fase"] = None
         asset = None
         for a in d.get("assets") or []:
             n = a.get("name", "").lower()
@@ -1803,6 +1852,8 @@ def check_update():
     except Exception as e:
         UPDATE["checked"] = UPDATE["checked"] or time.time()
         UPDATE["msg"] = "não consegui checar no GitHub: %s" % str(e)[:120]
+        if not UPDATE["busy"]:
+            UPDATE["fase"] = "upd_sem_resposta"
 
 
 def update_available():
@@ -1830,13 +1881,16 @@ def install_update():
             dst = Path(os.environ.get("TEMP", str(DATA))) / ("PrompterSetup-%s.exe" % UPDATE["latest"])
             UPDATE["msg"] = "baixando a versão %s" % UPDATE["latest"]
             UPDATE["pct"] = 0
+            UPDATE["fase"] = "upd_baixando"
 
             def hook(n, bs, total):
                 if total > 0:
                     UPDATE["pct"] = min(99, int(n * bs * 100 / total))
+                    UPDATE["mb"] = total // 1048576
                     UPDATE["msg"] = "baixando a versão %s: %d%% de %d MB" % (UPDATE["latest"], UPDATE["pct"], total // 1048576)
             urllib.request.urlretrieve(UPDATE["asset"], dst, reporthook=hook)
             UPDATE["pct"] = 100
+            UPDATE["fase"] = "upd_instalando"
             UPDATE["msg"] = "instalando: confirme o pedido de administrador do Windows; o Prompter fecha e reabre sozinho"
             # NAO encerra o app aqui: o instalador fecha o Prompter quando o Windows autorizar.
             # Se o pedido de administrador for negado, o app continua rodando.
@@ -1846,12 +1900,15 @@ def install_update():
                 if p.poll() is not None:
                     break
             if p.returncode not in (None, 0):
+                UPDATE["fase"] = "upd_erro"
                 UPDATE["msg"] = "a instalação não aconteceu (código %s). Se você negou a permissão de administrador, clique de novo e aceite." % p.returncode
             else:
+                UPDATE["fase"] = None
                 UPDATE["msg"] = None
         else:
             open_path(UPDATE["asset"])
     except Exception as e:
+        UPDATE["fase"] = "upd_erro"
         UPDATE["msg"] = "erro na atualização: %s" % str(e)[:160]
     finally:
         UPDATE["busy"] = False
@@ -1902,9 +1959,23 @@ def current_view(state):
         "session_song": state.session_song,
         "pasta_id": state.session_pasta, "pasta": pasta["name"] if pasta else None,
         "loaded": [s for s in (pasta.get("songs") or []) if s in (pasta.get("layout") or {})] if pasta else ([state.session_song] if state.session_song else []),
-        "pasta_progresso": next(({"pasta": p["name"], "msg": p["progresso"]["msg"]} for p in LIB.pastas.values() if p.get("progresso")), None),
+        "pasta_progresso": next((dict(p["progresso"], pasta=p["name"]) for p in LIB.pastas.values() if p.get("progresso")), None),
         "update": UPDATE["latest"] if update_available() else None,
+        # campos estruturados para as mensagens das telas (static/estados.js); os textos antigos continuam acima
+        "pt_estado": pt_estado(state),
+        "abre_pt": bool(CFG.get("abrir_protools", True)),
+        "preparo": state.prep,
+        "update_fase": UPDATE["fase"],
     }
+
+
+def pt_estado(state):
+    """Situacao do Pro Tools num codigo so: fechado, conectando (aberto, PTSL ainda nao respondeu), sem_sessao, sessao."""
+    if state.ptsl_ok:
+        return "sessao" if state.session else "sem_sessao"
+    if state.pt_found:
+        return "conectando"
+    return "fechado"
 
 
 # ----------------------------------------------------------------------------
@@ -2040,10 +2111,12 @@ def setup_status(state, transcriber, ptlink):
         "mtc_seen": state.tc_at > 0, "loopmidi_msg": SETUP["loopmidi_msg"], "loopmidi_job": SETUP["loopmidi_job"] is not None,
         "whisper_model": CFG["modelo_whisper"], "whisper_cached": transcriber.whisper_cached() is not None,
         "demucs_cached": transcriber.demucs_cached(), "transcribing": transcriber.current,
+        "transcribing_progresso": (LIB.get(transcriber.current) or {}).get("progresso") if transcriber.current else None,
         "autostart": autostart_get(), "pasta_musicas": CFG["pasta_musicas"], "n_songs": len(LIB.songs),
         "data_dir": str(DATA), "log": str(LOG_PATH),
         "update": {"available": update_available(), "latest": UPDATE["latest"], "url": UPDATE["url"], "asset": UPDATE["asset"],
-                   "notes": UPDATE["notes"], "msg": UPDATE["msg"], "busy": UPDATE["busy"], "checked": UPDATE["checked"], "pct": UPDATE["pct"]},
+                   "notes": UPDATE["notes"], "msg": UPDATE["msg"], "busy": UPDATE["busy"], "checked": UPDATE["checked"], "pct": UPDATE["pct"],
+                   "fase": UPDATE["fase"], "mb": UPDATE["mb"]},
     }
 
 
@@ -2072,7 +2145,8 @@ def run_web(state, transcriber, ptlink):
             while True:
                 v = current_view(state)
                 key = (v["song_id"], v["line"], v["playing"], v["midi"], v["ptsl"], v["protools"], v["session"],
-                       v["status"], v["manual"], v["n_lines"], json.dumps(v["progresso"]), v["update"])
+                       v["status"], v["manual"], v["n_lines"], json.dumps(v["progresso"]), v["update"],
+                       json.dumps(v["preparo"]), json.dumps(v["pasta_progresso"]), v["session_audio_n"])
                 n += 1
                 if key != last or n % 5 == 0:
                     await resp.write(("data: " + json.dumps(v, ensure_ascii=False) + "\n\n").encode())
@@ -2132,6 +2206,7 @@ def run_web(state, transcriber, ptlink):
                 def job():
                     try:
                         r = ptlink.load_pasta(p)
+                        p.pop("erro", None)   # carregou: o erro da vez anterior nao vale mais
                         log("pasta", p["name"], ":", r.get("msg"))
                     except Exception as e:
                         log("erro carregando a pasta", p["name"], ":", str(e)[:200])
@@ -2316,7 +2391,7 @@ def run_web(state, transcriber, ptlink):
         body = await req.json()
         act = body.get("action")
         if not state.ptsl_ok:
-            return web.json_response({"ok": False, "erro": "Pro Tools não conectado (PTSL)"}, status=409)
+            return web.json_response({"ok": False, "erro": "Pro Tools não conectado (PTSL)", "codigo": "pt_desconectado"}, status=409)
         sid = body.get("song_id") or (state.forced_song if act in ("play", "toggle") else None)
         s = LIB.get(sid) if sid else None
         # Em que pasta (setlist) esta musica vai tocar: a que o estudio indicou, a que esta aberta no Pro Tools,
@@ -2349,12 +2424,12 @@ def run_web(state, transcriber, ptlink):
                 if not ok:
                     log("play de", s["name"], "na pasta" if pasta else "com a sessao", pasta["name"] if pasta else state.session, "-> preparando o Pro Tools")
                     if pasta and pasta.get("progresso"):
-                        return web.json_response({"ok": False, "erro": "a pasta ainda está sendo carregada no Pro Tools"}, status=409)
+                        return web.json_response({"ok": False, "erro": "a pasta ainda está sendo carregada no Pro Tools", "codigo": "pasta_carregando"}, status=409)
                     r = await asyncio.to_thread(ptlink.load_pasta if pasta else ptlink.ensure_session, pasta or s)
                     if not r.get("ok"):
-                        return web.json_response({"ok": False, "erro": r.get("msg", "não consegui preparar o Pro Tools")}, status=500)
+                        return web.json_response({"ok": False, "erro": r.get("msg", "não consegui preparar o Pro Tools"), "codigo": r.get("codigo", "preparo_falhou")}, status=500)
                     if pasta and sid not in (pasta.get("layout") or {}):
-                        return web.json_response({"ok": False, "erro": "a música não tem arquivo de áudio para colocar na pasta"}, status=500)
+                        return web.json_response({"ok": False, "erro": "a música não tem arquivo de áudio para colocar na pasta", "codigo": "sem_audio"}, status=500)
                     await asyncio.sleep(0.8)
                     if act == "toggle":
                         act = "play"
@@ -2378,7 +2453,7 @@ def run_web(state, transcriber, ptlink):
                 await asyncio.to_thread(ptlink.toggle)
         except Exception as e:
             log("erro no transporte:", e)
-            return web.json_response({"ok": False, "erro": str(e)[:200]}, status=500)
+            return web.json_response({"ok": False, "erro": str(e)[:200], "codigo": "transporte_falhou"}, status=500)
         return web.json_response(dict(current_view(state), ok=True))
 
     async def api_control(req):
@@ -2428,7 +2503,7 @@ def run_web(state, transcriber, ptlink):
         if not s:
             raise web.HTTPNotFound()
         if not state.ptsl_ok:
-            return web.json_response({"ok": False, "msg": "Pro Tools não conectado"}, status=409)
+            return web.json_response({"ok": False, "msg": "Pro Tools não conectado", "codigo": "pt_desconectado"}, status=409)
         try:
             if body.get("into_open"):
                 r = await asyncio.to_thread(ptlink.import_into_session, s)
@@ -2436,7 +2511,7 @@ def run_web(state, transcriber, ptlink):
                 r = await asyncio.to_thread(ptlink.make_session, s)
         except Exception as e:
             log("erro na sessao:", e)
-            return web.json_response({"ok": False, "msg": str(e)[:200]}, status=500)
+            return web.json_response({"ok": False, "msg": str(e)[:200], "codigo": "preparo_falhou"}, status=500)
         return web.json_response(r)
 
     async def api_setup(req):
@@ -2471,6 +2546,28 @@ def run_web(state, transcriber, ptlink):
             threading.Thread(target=install_update, daemon=True).start()
         return web.json_response(await asyncio.to_thread(setup_status, state, transcriber, ptlink))
 
+    async def api_simular(req):
+        """SO com --simular (instancia de teste): forca estados para conferir as MENSAGENS das telas sem Pro Tools
+        nem transcricao real. Nunca registrada no uso normal."""
+        body = await req.json()
+        s = LIB.get(body.get("song_id") or "")
+        if s is not None:
+            with LIB.lock:
+                for k in ("status", "progresso", "erro", "lines", "session_alias"):
+                    if k in body:
+                        s[k] = body[k]
+        for k in ("pt_found", "ptsl_ok", "session", "session_audio_n", "session_song", "session_pasta", "forced_song", "prep"):
+            if k in body:
+                setattr(state, k, body[k])
+        if "pasta_progresso" in body:
+            for pid, p in LIB.pastas.items():
+                p["progresso"] = body["pasta_progresso"] if pid == body.get("pasta_id") else None
+        if "pasta_erro" in body and body.get("pasta_id") in LIB.pastas:
+            LIB.pastas[body["pasta_id"]]["erro"] = body["pasta_erro"]
+        if "update" in body:
+            UPDATE.update(body["update"])
+        return web.json_response(current_view(state))
+
     app = web.Application(client_max_size=2 * 1024 * 1024 * 1024)
     app.router.add_get("/", page("index.html"))
     app.router.add_get("/editar", page("editar.html"))
@@ -2491,6 +2588,9 @@ def run_web(state, transcriber, ptlink):
     app.router.add_post("/api/pasta", api_pasta)
     app.router.add_get("/api/setup", api_setup)
     app.router.add_post("/api/setup", api_setup_post)
+    if "--simular" in sys.argv:
+        app.router.add_post("/api/simular", api_simular)
+        log("MODO SIMULACAO: /api/simular ligado; Pro Tools nao e lido")
     app.router.add_static("/static", STATIC)
     log("tela em http://localhost:%d  (estudio: /estudio, configuracao: /config)" % CFG["porta"])
     web.run_app(app, host=None, port=int(CFG["porta"]), print=None, handle_signals=False)  # IPv4 e IPv6
@@ -2564,8 +2664,9 @@ def main():
     tr = Transcriber(state)
     link = PTLink(state)
     MTCReader(state).start()
-    PTWatcher(state).start()
-    link.start()
+    if "--simular" not in sys.argv:   # simulacao: as leituras do Pro Tools nao podem sobrescrever o estado forcado
+        PTWatcher(state).start()
+        link.start()
     if "--sem-transcricao" not in sys.argv:
         tr.start()
     threading.Thread(target=run_web, args=(state, tr, link), daemon=True, name="web").start()

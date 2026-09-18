@@ -17,7 +17,7 @@ sincroniza a exibição do texto com a música.
 | Sistema | Arquivo | O que fazer |
 |---|---|---|
 | Windows 10/11 | `PrompterSetup-x.y.z.exe` | Executar → **Instalar**. Instala o Prompter **e o loopMIDI** (porta MIDI virtual) de uma vez. Pede permissão de administrador uma vez. |
-| macOS (Apple Silicon) | `Prompter-x.y.z-mac-arm64.dmg` | Arrastar para Aplicativos. Na 1ª vez: botão direito → **Abrir** (app não assinado pela Apple). |
+| macOS (Apple Silicon) | `Prompter-x.y.z-mac-arm64.dmg` | Arrastar para Aplicativos e abrir (assinado com Developer ID e notarizado pela Apple). |
 | macOS (Intel) | `Prompter-x.y.z-mac-x86_64.dmg` | idem |
 
 Toda vez que abrir o Prompter: ele **abre o Pro Tools junto** e abre a **tela do teleprompter no navegador**

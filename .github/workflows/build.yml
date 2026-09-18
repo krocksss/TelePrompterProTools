@@ -123,7 +123,7 @@ jobs:
           NOTES="**Prompter ${TAG#v}** · teleprompter sincronizado com o Pro Tools, por [Marllon Machado](https://github.com/krocksss)
 
           - **Windows**: PrompterSetup-${TAG#v}.exe (inclui o loopMIDI). Baixar, executar, Instalar.
-          - **macOS**: Prompter-${TAG#v}-mac-arm64.dmg (Apple Silicon) ou -x86_64.dmg (Intel). Arraste para Aplicativos. Se o macOS reclamar (versão sem assinatura), botão direito > Abrir.
+          - **macOS**: Prompter-${TAG#v}-mac-arm64.dmg (Apple Silicon) ou -x86_64.dmg (Intel). Arraste para Aplicativos e abra (assinado e notarizado pela Apple).
 
           Problemas? https://www.instagram.com/marllon_sec/"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --title "Prompter ${TAG#v}" --notes "$NOTES" --repo "$GITHUB_REPOSITORY"
